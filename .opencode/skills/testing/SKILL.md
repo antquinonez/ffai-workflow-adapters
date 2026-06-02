@@ -158,6 +158,10 @@ If a test is named `test_input_field_mapping`, it must verify that field mapping
 
 Every bug fix or review fix must include at least one test that reproduces the original failure. If the fix is a defensive change (e.g., `None` default instead of empty string, or adding shared validation), the test must exercise the edge case that motivated it. A fix without a regression test is incomplete — a future refactor could silently revert the fix and the suite would not catch it.
 
+### TP-18: Fix all lint and typecheck issues found, not just new ones
+
+When `ruff check` or `pyright` is run, every reported issue must be fixed regardless of whether it was introduced in the current session or was pre-existing. Leaving known issues unfixed normalizes a broken baseline and makes it harder to catch regressions. If fixing a pre-existing issue is genuinely risky or out of scope, add a `# noqa` or `# type: ignore` comment with a brief justification — but silence intentionally, never by inaction.
+
 ## Adapter-Specific Patterns
 
 ### Config save/restore in unit tests
