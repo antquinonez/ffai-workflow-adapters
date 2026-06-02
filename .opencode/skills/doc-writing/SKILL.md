@@ -165,3 +165,60 @@ Guides explain how to accomplish a specific task. They assume the reader has com
 4. **Reference** — links to relevant API docs
 
 Guides go in `docs/`.
+
+## Tutorial Writing
+
+Tutorials are a distinct documentation type from API reference and guides. A tutorial teaches a skill through a hands-on, end-to-end walkthrough. A guide explains how to accomplish a specific task. Both are needed, but tutorials come first in the reader's journey.
+
+### DW-T1: Tutorial structure
+
+Every tutorial follows this structure:
+
+1. **Title and goal** — one sentence saying what the reader will build or learn
+2. **Prerequisites** — what the reader needs installed, configured, or understood before starting
+3. **Setup** — copy-paste-ready code to get to a working starting point
+4. **Steps** — numbered, incremental, each building on the last
+5. **Complete listing** — the full working code assembled from all steps
+6. **Next steps** — links to related tutorials, guides, or API reference
+
+### DW-T2: Every step must be independently runnable
+
+Each numbered step must leave the reader with working code. If step 3 introduces a bug, the reader should not have to complete step 5 to discover it. Run each step in isolation to verify.
+
+### DW-T3: Show the output, not just the code
+
+Every step must show expected output. Readers use output to verify they're on track. For LLM-generated content, show structural output (types, field names, shapes) and mark variable content as illustrative.
+
+### DW-T4: Progressive complexity
+
+Start with the simplest working version. Add complexity one concept at a time. Do not introduce error handling, configuration, or optimization until the basic version works.
+
+Wrong order: setup config → configure field mapping → handle errors → load first workflow
+Right order: load first workflow → add field mapping → add configuration → add error handling
+
+### DW-T5: Use a consistent running example
+
+One dataset, one domain, one scenario throughout the tutorial. Switching contexts mid-tutorial forces the reader to re-orient. Good running examples: a content generation pipeline, a data enrichment workflow, a multi-step analysis chain.
+
+### DW-T6: Tutorials go in `docs/tutorials/`
+
+File naming: `docs/tutorials/<topic>.md`. Each tutorial is a single Markdown file. Link from `docs/README.md` or the main documentation index.
+
+### DW-T7: Guide structure
+
+Guides explain how to accomplish a specific task. They assume the reader has completed the quickstart. Structure:
+
+1. **Title** — task-oriented ("Loading Workflows from Excel", not "Excel Adapter API")
+2. **Overview** — 2-3 sentences on what this guide covers
+3. **Steps** — numbered or headed sections, each focused on one sub-task
+4. **Reference** — links to relevant API docs
+
+Guides go in `docs/`.
+
+### DW-T8: DRY between tutorials, guides, and README
+
+The README contains a quickstart. Tutorials expand on it. Guides reference tutorials. Do not duplicate full code blocks across all three. Instead:
+- README: minimal working example (3-5 lines)
+- Quickstart: extended example with explanation
+- Tutorial: full end-to-end with setup, steps, and complete listing
+- Guide: task-focused snippets with links to tutorials for full context
