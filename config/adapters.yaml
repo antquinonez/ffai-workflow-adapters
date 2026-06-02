@@ -33,5 +33,47 @@ adapters:
           step: Task
           response: Output
           model: "AI Model"
+  excel:
+    output_path: "output/results.xlsx"
+    output_sheet: "Results"
+    passthrough_columns:
+      - Comments
+      - Priority
+      - Category
+    extra_output_columns:
+      run_date: "{{date}}"
+      batch: "demo-run"
+    input_field_map:
+      Name: name
+      Prompt: prompt
+      Model: client
+      History: history
+      Temperature: temperature
+      Max Tokens: max_tokens
+    output_field_map:
+      workflow: Workflow
+      step: Step
+      status: Status
+      response: Response
+      model: Model
+      input_tokens: Input Tokens
+      output_tokens: Output Tokens
+      cost_usd: Cost
+      duration_ms: Duration ms
+      timestamp: Timestamp
+    named:
+      custom:
+        output_path: "output/results_custom.xlsx"
+        output_sheet: "Custom Results"
+        input_field_map:
+          Task: name
+          Instructions: prompt
+          "AI Model": client
+          Context: history
+          Temp: temperature
+        output_field_map:
+          step: Task
+          response: Output
+          model: "AI Model"
   google_sheets:
     api_key_env: GOOGLE_SHEETS_API_KEY

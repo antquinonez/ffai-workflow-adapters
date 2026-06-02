@@ -75,21 +75,14 @@ class RetryConfig(BaseSettings):
     retry_on_status_codes: list[int] = Field(default_factory=lambda: [429, 503, 502, 504])
 
 
-class AirtableAdapterConfig(BaseSettings):
-    api_key_env: str = "AIRTABLE_API_KEY"
-    base_id_env: str = "AIRTABLE_BASE_ID"
-    default_view: str = ""
+class _FieldMappedAdapterConfig(BaseSettings):
     input_field_map: dict[str, str] = Field(default_factory=dict)
     output_field_map: dict[str, str] = Field(default_factory=dict)
+    passthrough_columns: list[str] = Field(default_factory=list)
+    extra_output_columns: dict[str, str] = Field(default_factory=dict)
     named: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
-    def resolve_input_field(self, column_name: str) -> str:
-        return self.input_field_map.get(column_name, column_name)
-
-    def resolve_output_field(self, field_name: str) -> str:
-        return self.output_field_map.get(field_name, field_name)
-
-    def resolve(self, name: str | None = None) -> AirtableAdapterConfig:
+    def resolve(self, name: str | None = None) -> Any:
         if not name:
             return self
         child_data = self.named.get(name)
@@ -97,7 +90,7 @@ class AirtableAdapterConfig(BaseSettings):
             return self
         return self._inherit(child_data)
 
-    def _inherit(self, child_data: dict[str, Any]) -> AirtableAdapterConfig:
+    def _inherit(self, child_data: dict[str, Any]) -> Any:
         data: dict[str, Any] = {}
         for field_name in self.__class__.model_fields:
             if field_name == "named":
@@ -113,7 +106,18 @@ class AirtableAdapterConfig(BaseSettings):
                 data[field_name] = child_val
             else:
                 data[field_name] = base_val
-        return AirtableAdapterConfig(**data)
+        return self.__class__(**data)
+
+
+class AirtableAdapterConfig(_FieldMappedAdapterConfig):
+    api_key_env: str = "AIRTABLE_API_KEY"
+    base_id_env: str = "AIRTABLE_BASE_ID"
+    default_view: str = ""
+
+
+class ExcelAdapterConfig(_FieldMappedAdapterConfig):
+    output_path: str = ""
+    output_sheet: str = "Results"
 
 
 class GoogleSheetsAdapterConfig(BaseSettings):
@@ -124,6 +128,7 @@ class AdaptersConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="allow")
 
     airtable: AirtableAdapterConfig = Field(default_factory=AirtableAdapterConfig)
+    excel: ExcelAdapterConfig = Field(default_factory=ExcelAdapterConfig)
     google_sheets: GoogleSheetsAdapterConfig = Field(default_factory=GoogleSheetsAdapterConfig)
 
 

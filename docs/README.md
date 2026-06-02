@@ -53,6 +53,7 @@ asyncio.run(main())
 | Adapter | Status | Documentation |
 |---------|--------|---------------|
 | Airtable | Available | [docs/airtable.md](airtable.md) |
+| Excel | Available | [docs/excel.md](excel.md) |
 | Google Sheets | Planned | — |
 
 ## Configuration
@@ -117,6 +118,14 @@ Load a workflow spec from an Airtable table.
 ### `write_workflow_results(base_id, table_name, result, ...)`
 
 Write workflow execution results back to an Airtable table.
+
+### `load_workflow_excel(path, ...)`
+
+Load a workflow spec from an Excel (.xlsx) file.
+
+### `write_workflow_results_excel(path, result, ...)`
+
+Write workflow execution results to an Excel file.
 
 ### `get_config()`
 
