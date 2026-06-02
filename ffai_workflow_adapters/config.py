@@ -229,6 +229,12 @@ _config: Config | None = None
 
 
 def get_config() -> Config:
+    """Return the singleton Config instance, creating it on first call.
+
+    The Config is loaded from YAML files, environment variables (using
+    ``__`` as nested delimiter), and constructor defaults. Subsequent
+    calls return the same instance until ``reload_config`` is called.
+    """
     global _config
     if _config is None:
         _config = Config()
@@ -236,6 +242,14 @@ def get_config() -> Config:
 
 
 def reload_config() -> Config:
+    """Discard the cached Config and reload from all sources.
+
+    Re-reads YAML files and environment variables. Use after changing
+    config files or env vars at runtime.
+
+    Returns:
+        The freshly loaded Config instance.
+    """
     global _config
     _config = Config()
     return _config

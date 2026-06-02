@@ -78,6 +78,38 @@ def load_workflow_airtable(
     clients: dict[str, dict[str, Any] | str] | None = None,
     tools: dict[str, dict[str, Any]] | None = None,
 ) -> Any:
+    """Load a workflow from an Airtable table into a ffai WorkflowSpec.
+
+    Reads all records from the specified table, applies field mapping from
+    the resolved adapter config, validates required columns, and delegates
+    to ffai's load_workflow_rows. Includes rate limiting, circuit breaking,
+    and retry with exponential backoff.
+
+    Args:
+        base_id: Airtable base ID.
+        table_name: Table name within the base.
+        adapter: Named adapter variant from config/adapters.yaml.
+            When provided, overrides field maps and passthrough columns.
+        api_key: Airtable API key. Falls back to the environment variable
+            named by ``api_key_env``.
+        api_key_env: Environment variable name holding the API key.
+            Defaults to the adapter config's ``api_key_env``.
+        view: Airtable view name to filter records. Defaults to the
+            adapter config's ``default_view``.
+        name: Workflow name assigned to the resulting WorkflowSpec.
+        description: Workflow description for the resulting WorkflowSpec.
+        defaults: Default values merged into each row (model, temperature,
+            etc.).
+        clients: Client definitions passed through to ffai.
+        tools: Tool definitions passed through to ffai.
+
+    Returns:
+        A ffai WorkflowSpec ready for execution.
+
+    Raises:
+        TabularLoadError: If pyairtable is not installed, the API key is
+            missing, the table is empty, or required columns are absent.
+    """
     try:
         from pyairtable.api import Api
     except ImportError as e:
@@ -162,6 +194,29 @@ def write_workflow_results(
     spec: Any | None = None,
     run_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    """Write workflow execution results back to an Airtable table.
+
+    Creates one record per workflow step with fields for status, response,
+    model, token usage, cost, and duration. Supports passthrough columns
+    from the source spec and extra output columns with template resolution.
+
+    Args:
+        base_id: Airtable base ID.
+        table_name: Target table name for writing results.
+        result: A ffai WorkflowResult containing step results.
+        adapter: Named adapter variant for output field mapping.
+        api_key: Airtable API key. Falls back to environment variable.
+        api_key_env: Environment variable name holding the API key.
+        spec: The original WorkflowSpec (used for passthrough column data).
+        run_id: Unique run identifier. Auto-generated if not provided.
+
+    Returns:
+        List of created Airtable records as dicts.
+
+    Raises:
+        TabularLoadError: If pyairtable is not installed, the API key is
+            missing, or the circuit breaker is open.
+    """
     try:
         from pyairtable.api import Api
     except ImportError as e:

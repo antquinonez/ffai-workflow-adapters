@@ -32,6 +32,32 @@ def load_workflow_excel(
     clients: dict[str, dict[str, Any] | str] | None = None,
     tools: dict[str, dict[str, Any]] | None = None,
 ) -> Any:
+    """Load a workflow from an Excel file into a ffai WorkflowSpec.
+
+    Reads the specified sheet, applies field mapping from the resolved
+    adapter config, validates required columns, and delegates to ffai's
+    load_workflow_rows. Warns about unrecognized columns.
+
+    Args:
+        path: Path to the .xlsx file.
+        sheet: Sheet name or index. Defaults to the active sheet.
+        adapter: Named adapter variant from config/adapters.yaml.
+            When provided, overrides field maps and passthrough columns.
+        name: Workflow name assigned to the resulting WorkflowSpec.
+        description: Workflow description for the resulting WorkflowSpec.
+        defaults: Default values merged into each row (model, temperature,
+            etc.).
+        clients: Client definitions passed through to ffai.
+        tools: Tool definitions passed through to ffai.
+
+    Returns:
+        A ffai WorkflowSpec ready for execution.
+
+    Raises:
+        TabularLoadError: If openpyxl is not installed, the file is not
+            found, the sheet has no header row, there are no data rows,
+            or required columns are missing.
+    """
     try:
         from openpyxl import load_workbook
     except ImportError as e:
@@ -137,6 +163,30 @@ def write_workflow_results_excel(
     spec: Any | None = None,
     run_id: str | None = None,
 ) -> str:
+    """Write workflow execution results to an Excel file.
+
+    Creates one row per workflow step with columns for status, response,
+    model, token usage, cost, and duration. Appends to an existing sheet
+    or creates a new file. Supports passthrough columns from the source
+    spec and extra output columns with template resolution.
+
+    Args:
+        result: A ffai WorkflowResult containing step results.
+        path: Output file path. Falls back to the adapter config's
+            ``output_path``.
+        sheet: Sheet name for results. Defaults to the adapter config's
+            ``output_sheet`` or "Results".
+        adapter: Named adapter variant for output field mapping.
+        spec: The original WorkflowSpec (used for passthrough column data).
+        run_id: Unique run identifier. Auto-generated if not provided.
+
+    Returns:
+        The file path written to, as a string.
+
+    Raises:
+        TabularLoadError: If openpyxl is not installed.
+        ValueError: If no output path is specified.
+    """
     try:
         from openpyxl import Workbook, load_workbook
     except ImportError as e:
