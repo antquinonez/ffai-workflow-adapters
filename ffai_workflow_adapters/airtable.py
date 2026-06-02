@@ -6,6 +6,7 @@ from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters._validation import validate_schema
 from ffai_workflow_adapters.config import get_config
 
 
@@ -84,6 +85,8 @@ def load_workflow_airtable(
         raise TabularLoadError(
             f"Airtable table '{table_name}' in base '{base_id}' contains no records"
         )
+
+    validate_schema(rows, f"Airtable table '{table_name}' in base '{base_id}'")
 
     return load_workflow_rows(
         rows,

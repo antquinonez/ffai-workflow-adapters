@@ -165,12 +165,11 @@ class TestConfig:
         assert cfg.get_default_client_type() == "litellm-mistral-small"
 
     def test_get_adapter_api_key(self):
-        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test_key_123"}):
+        with patch.dict(os.environ, {"MISTRAL_API_KEY": "test_key_123"}, clear=True):
             cfg = Config()
-            # airtable uses AIRTABLE_API_KEY, not MISTRAL_API_KEY
             assert cfg.get_adapter_api_key("airtable") is None
 
-        with patch.dict(os.environ, {"AIRTABLE_API_KEY": "airtable_key"}):
+        with patch.dict(os.environ, {"AIRTABLE_API_KEY": "airtable_key"}, clear=True):
             cfg = Config()
             assert cfg.get_adapter_api_key("airtable") == "airtable_key"
 

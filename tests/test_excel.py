@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -208,6 +209,85 @@ class TestLoadWorkflowExcel:
         finally:
             pass
 
+    def test_schema_missing_required_column_raises(self, tmp_path: Path):
+        filepath = tmp_path / "workflow.xlsx"
+        _create_xlsx(filepath, ["name_only", "other"], [
+            ["step1", "value"],
+        ])
+
+        with pytest.raises(TabularLoadError, match="missing required columns"):
+            load_workflow_excel(filepath)
+
+    def test_schema_missing_prompt_with_field_map_raises(self, tmp_path: Path):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        cfg.adapters.excel.input_field_map = {"Task": "name"}
+        try:
+            filepath = tmp_path / "workflow.xlsx"
+            _create_xlsx(filepath, ["Task", "Other"], [
+                ["step1", "value"],
+            ])
+
+            with pytest.raises(TabularLoadError, match="missing required columns"):
+                load_workflow_excel(filepath)
+        finally:
+            cfg.adapters.excel.input_field_map = {}
+
+    def test_schema_invalid_temperature_raises(self, tmp_path: Path):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        filepath = tmp_path / "workflow.xlsx"
+        _create_xlsx(filepath, ["name", "prompt", "temperature"], [
+            ["step1", "Go", "hot"],
+        ])
+
+        with pytest.raises(TabularLoadError, match="temperature must be a number"):
+            load_workflow_excel(filepath)
+
+    def test_schema_invalid_max_tokens_raises(self, tmp_path: Path):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        filepath = tmp_path / "workflow.xlsx"
+        _create_xlsx(filepath, ["name", "prompt", "max_tokens"], [
+            ["step1", "Go", "lots"],
+        ])
+
+        with pytest.raises(TabularLoadError, match="max_tokens must be a number"):
+            load_workflow_excel(filepath)
+
+    def test_schema_valid_numeric_fields_pass(self, tmp_path: Path):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        filepath = tmp_path / "workflow.xlsx"
+        _create_xlsx(filepath, ["name", "prompt", "temperature", "max_tokens"], [
+            ["step1", "Go", 0.7, 1024],
+        ])
+
+        spec = load_workflow_excel(filepath, name="valid_nums")
+        assert spec.prompts[0].name == "step1"
+
+    def test_schema_warns_on_unrecognized_columns(self, tmp_path: Path, caplog):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        cfg.adapters.excel.input_field_map = {}
+        cfg.adapters.excel.passthrough_columns = []
+        try:
+            filepath = tmp_path / "workflow.xlsx"
+            _create_xlsx(filepath, ["name", "prompt", "WackyColumn", "AnotherBad"], [
+                ["step1", "Go", "x", "y"],
+            ])
+
+            with caplog.at_level(logging.WARNING):
+                spec = load_workflow_excel(filepath, name="warn_test")
+            assert spec.prompts[0].name == "step1"
+            assert "Unrecognized columns" in caplog.text
+            assert "WackyColumn" in caplog.text
+        finally:
+            pass
+
 
 class TestWriteWorkflowResultsExcel:
     def _make_result(self):
@@ -383,42 +463,90 @@ class TestWriteWorkflowResultsExcel:
         finally:
             cfg.adapters.excel.output_field_map = saved_map
 
-    def test_passthrough_columns_in_output(self, tmp_path: Path):
+    def test_run_id_auto_generated(self, tmp_path: Path):
         from ffai_workflow_adapters.config import reload_config
+        import re
         cfg = reload_config()
         saved_map = dict(cfg.adapters.excel.output_field_map)
-        saved_pt = list(cfg.adapters.excel.passthrough_columns)
+        saved_extra = dict(cfg.adapters.excel.extra_output_columns)
         cfg.adapters.excel.output_field_map = {}
-        cfg.adapters.excel.passthrough_columns = ["Comments"]
+        cfg.adapters.excel.extra_output_columns = {"run_id": "{{run_id}}"}
         try:
             filepath = tmp_path / "results.xlsx"
             result = self._make_result()
 
-            from ffai.workflow.tabular import load_workflow_rows
-            spec = load_workflow_rows(
-                [{"name": "topic", "prompt": "Go"}, {"name": "explain", "prompt": "Expand"}],
-                name="test",
-            )
-            object.__setattr__(spec, "_source_metadata", {
-                "topic": {"Comments": "Check footnotes"},
-                "explain": {"Comments": "Final step"},
-            })
-
-            write_workflow_results_excel(result, path=filepath, spec=spec)
+            write_workflow_results_excel(result, path=filepath)
 
             from openpyxl import load_workbook
             wb = load_workbook(filepath)
             ws = wb["Results"]
             rows = list(ws.iter_rows(values_only=True))
             header = list(rows[0])
-            assert "Comments" in header
-            comments_col = header.index("Comments")
-            assert rows[1][comments_col] == "Check footnotes"
-            assert rows[2][comments_col] == "Final step"
+            run_id_col = header.index("run_id")
+            run_id_1 = rows[1][run_id_col]
+            run_id_2 = rows[2][run_id_col]
+            assert run_id_1 == run_id_2
+            assert re.match(r"\d{8}-\d{6}", run_id_1)
             wb.close()
         finally:
             cfg.adapters.excel.output_field_map = saved_map
-            cfg.adapters.excel.passthrough_columns = saved_pt
+            cfg.adapters.excel.extra_output_columns = saved_extra
+
+    def test_run_id_custom(self, tmp_path: Path):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved_map = dict(cfg.adapters.excel.output_field_map)
+        saved_extra = dict(cfg.adapters.excel.extra_output_columns)
+        cfg.adapters.excel.output_field_map = {}
+        cfg.adapters.excel.extra_output_columns = {"run_id": "{{run_id}}"}
+        try:
+            filepath = tmp_path / "results.xlsx"
+            result = self._make_result()
+
+            write_workflow_results_excel(result, path=filepath, run_id="batch-42")
+
+            from openpyxl import load_workbook
+            wb = load_workbook(filepath)
+            ws = wb["Results"]
+            rows = list(ws.iter_rows(values_only=True))
+            header = list(rows[0])
+            run_id_col = header.index("run_id")
+            assert rows[1][run_id_col] == "batch-42"
+            assert rows[2][run_id_col] == "batch-42"
+            wb.close()
+        finally:
+            cfg.adapters.excel.output_field_map = saved_map
+            cfg.adapters.excel.extra_output_columns = saved_extra
+
+    def test_run_id_consistent_across_rows(self, tmp_path: Path):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved_map = dict(cfg.adapters.excel.output_field_map)
+        saved_extra = dict(cfg.adapters.excel.extra_output_columns)
+        cfg.adapters.excel.output_field_map = {}
+        cfg.adapters.excel.extra_output_columns = {
+            "run_id": "{{run_id}}",
+            "ts": "{{timestamp}}",
+        }
+        try:
+            filepath = tmp_path / "results.xlsx"
+            result = self._make_result()
+
+            write_workflow_results_excel(result, path=filepath)
+
+            from openpyxl import load_workbook
+            wb = load_workbook(filepath)
+            ws = wb["Results"]
+            rows = list(ws.iter_rows(values_only=True))
+            header = list(rows[0])
+            run_id_col = header.index("run_id")
+            ts_col = header.index("ts")
+            assert rows[1][run_id_col] == rows[2][run_id_col]
+            assert rows[1][ts_col] == rows[2][ts_col]
+            wb.close()
+        finally:
+            cfg.adapters.excel.output_field_map = saved_map
+            cfg.adapters.excel.extra_output_columns = saved_extra
 
     def test_extra_output_columns(self, tmp_path: Path):
         from ffai_workflow_adapters.config import reload_config

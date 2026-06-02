@@ -1,15 +1,32 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters._validation import validate_schema
 from ffai_workflow_adapters.config import get_config
 
+logger = logging.getLogger(__name__)
 
-def _resolve_extra_value(template: str) -> Any:
+CANONICAL_FIELDS = frozenset({
+    "name", "prompt", "client", "model", "history",
+    "temperature", "max_tokens", "system_instructions",
+    "condition", "abort_condition", "response_format",
+    "response_model", "strict", "tools", "tool_choice",
+})
+
+
+def _generate_run_id() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+
+def _resolve_extra_value(template: str, run_id: str) -> Any:
+    if template == "{{run_id}}":
+        return run_id
     if template.startswith("{{now:") and template.endswith("}}"):
         fmt = template[6:-2]
         return datetime.now(timezone.utc).strftime(fmt)
@@ -64,6 +81,21 @@ def load_workflow_excel(
     field_map = cfg.input_field_map or None
     passthrough = cfg.passthrough_columns or []
 
+    valid_columns = CANONICAL_FIELDS | set(passthrough)
+    if field_map:
+        recognized = set(field_map.keys()) | valid_columns
+        unmapped = [h for h in headers if h and h not in recognized]
+    else:
+        unmapped = [h for h in headers if h and h not in valid_columns]
+    if unmapped:
+        logger.warning(
+            "Unrecognized columns in '%s' (sheet '%s'): %s. "
+            "These will be passed through unless they match a canonical field.",
+            filepath,
+            getattr(ws, "title", "?"),
+            unmapped,
+        )
+
     rows: list[dict[str, Any]] = []
     source_metadata: dict[str, dict[str, Any]] = {}
 
@@ -95,6 +127,8 @@ def load_workflow_excel(
     if not rows:
         raise TabularLoadError(f"Excel file '{filepath}' contains no data rows")
 
+    validate_schema(rows, str(filepath))
+
     spec = load_workflow_rows(
         rows,
         name=name,
@@ -117,6 +151,7 @@ def write_workflow_results_excel(
     sheet: str | None = None,
     adapter: str | None = None,
     spec: Any | None = None,
+    run_id: str | None = None,
 ) -> str:
     try:
         from openpyxl import Workbook, load_workbook
@@ -138,6 +173,9 @@ def write_workflow_results_excel(
 
     passthrough_cols = cfg.passthrough_columns or []
     extra_cols = cfg.extra_output_columns or {}
+
+    resolved_run_id = run_id or _generate_run_id()
+    resolved_extras = {col: _resolve_extra_value(tmpl, resolved_run_id) for col, tmpl in extra_cols.items()}
 
     canonical_fields = [
         "workflow", "step", "status", "response", "model",
@@ -169,8 +207,8 @@ def write_workflow_results_excel(
                 if col in source_metadata[step_name]:
                     fields[col] = source_metadata[step_name][col]
 
-        for col_name, template in extra_cols.items():
-            fields[col_name] = _resolve_extra_value(template)
+        for col_name, value in resolved_extras.items():
+            fields[col_name] = value
 
         if output_map:
             fields = {output_map.get(k, k): v for k, v in fields.items()}

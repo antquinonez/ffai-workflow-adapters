@@ -116,7 +116,7 @@ class AirtableAdapterConfig(_FieldMappedAdapterConfig):
 
 
 class ExcelAdapterConfig(_FieldMappedAdapterConfig):
-    output_path: str = ""
+    output_path: str | None = None
     output_sheet: str = "Results"
 
 
