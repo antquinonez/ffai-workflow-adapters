@@ -13,4 +13,4 @@ client_types:
     provider_prefix: "openai/"
     default_model: gpt-4o-mini
     fallbacks:
-      - litellm-mistral-small
+      - mistral/mistral-small-latest
