@@ -210,6 +210,45 @@ spec = load_workflow_airtable(base_id, "Steps")
 
 If a named config doesn't exist, the base config is used as-is.
 
+## Resilience
+
+All Airtable API calls (`load_workflow_airtable` and `write_workflow_results`) are automatically protected by:
+
+1. **Rate limiting** — A token-bucket limiter caps request throughput (default: 5 req/s, burst 10).
+2. **Circuit breaker** — After repeated failures (default: 5), calls are blocked until a recovery timeout (default: 30s), then a limited number of probe requests are allowed before the circuit fully re-opens.
+3. **Retry with backoff** — Failed requests with retryable status codes (429, 502, 503, 504) are retried with exponential backoff and jitter (default: 3 attempts).
+4. **Batched concurrent writes** — `write_workflow_results` splits records into chunks (default: 10) and writes them concurrently (default: 3 threads).
+
+These are internal — the public API is unchanged. Configure via `config/main.yaml`:
+
+```yaml
+retry:
+  max_attempts: 3
+  min_wait_seconds: 1.0
+  max_wait_seconds: 60.0
+  exponential_base: 2.0
+  exponential_jitter: true
+  retry_on_status_codes:
+    - 429
+    - 503
+    - 502
+    - 504
+
+resilience:
+  rate_limit:
+    requests_per_second: 5.0
+    burst: 10
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_seconds: 30.0
+    half_open_max_calls: 3
+  batch:
+    chunk_size: 10
+    max_concurrency: 3
+```
+
+Override any setting via environment variables using the `__` delimiter (e.g., `RESILIENCE__RATE_LIMIT__REQUESTS_PER_SECOND=10`).
+
 ## Field Mapping
 
 If your Airtable columns use custom names, configure mappings in `config/adapters.yaml` instead of renaming your columns.

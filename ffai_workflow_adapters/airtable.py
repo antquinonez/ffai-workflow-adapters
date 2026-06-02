@@ -5,6 +5,7 @@ from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters._resilience import CircuitBreaker, ResilientCaller, TokenBucket, batched
 from ffai_workflow_adapters._templates import _generate_run_id, _resolve_extra_value
 from ffai_workflow_adapters._validation import validate_schema
 from ffai_workflow_adapters.config import get_config
@@ -22,6 +23,44 @@ def _get_api_key(api_key: str | None = None, env_var: str | None = None) -> str:
             f"Airtable API key not provided. Pass api_key parameter or set {key_env} environment variable."
         )
     return key
+
+
+_last_config_id: int = 0
+_caller: ResilientCaller | None = None
+
+
+def _make_caller() -> ResilientCaller:
+    global _caller, _last_config_id
+    cfg = get_config()
+    cfg_id = id(cfg)
+    if _caller is not None and cfg_id == _last_config_id:
+        return _caller
+    rl = cfg.resilience.rate_limit
+    cb = cfg.resilience.circuit_breaker
+    retry = cfg.retry
+    _caller = ResilientCaller(
+        bucket=TokenBucket(rate=rl.requests_per_second, burst=rl.burst),
+        breaker=CircuitBreaker(
+            failure_threshold=cb.failure_threshold,
+            recovery_timeout_seconds=cb.recovery_timeout_seconds,
+            half_open_max_calls=cb.half_open_max_calls,
+        ),
+        retry_max_attempts=retry.max_attempts,
+        retry_min_wait=retry.min_wait_seconds,
+        retry_max_wait=retry.max_wait_seconds,
+        retry_exponential_base=retry.exponential_base,
+        retry_jitter=retry.exponential_jitter,
+        retry_on_status_codes=retry.retry_on_status_codes,
+        acquire_timeout=30.0,
+    )
+    _last_config_id = cfg_id
+    return _caller
+
+
+def _reset_caller() -> None:
+    global _caller, _last_config_id
+    _caller = None
+    _last_config_id = 0
 
 
 def load_workflow_airtable(
@@ -61,7 +100,8 @@ def load_workflow_airtable(
     if view:
         kwargs["view"] = view
 
-    records = table.all(**kwargs)
+    caller = _make_caller()
+    records = caller.call(table.all, **kwargs)
 
     source_metadata: dict[str, dict[str, Any]] = {}
     rows: list[dict[str, Any]] = []
@@ -175,4 +215,34 @@ def write_workflow_results(
 
         records.append(fields)
 
-    return [dict(r) for r in table.batch_create(records, typecast=True)]
+    cfg = get_config()
+    chunk_size = cfg.resilience.batch.chunk_size
+    max_concurrency = cfg.resilience.batch.max_concurrency
+    caller = _make_caller()
+
+    created: list[dict[str, Any]] = []
+
+    if max_concurrency <= 1:
+        for chunk in batched(records, chunk_size):
+            result = caller.call(table.batch_create, list(chunk), typecast=True)
+            created.extend(result)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+
+        chunks = list(batched(records, chunk_size))
+
+        def _write_chunk(chunk: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            thread_table = Api(key).table(base_id, table_name)
+            return caller.call(thread_table.batch_create, chunk, typecast=True)
+
+        with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+            futures = [pool.submit(_write_chunk, list(c)) for c in chunks]
+            try:
+                for future in futures:
+                    created.extend(future.result())
+            except Exception:
+                for f in futures:
+                    f.cancel()
+                raise
+
+    return [dict(r) for r in created]

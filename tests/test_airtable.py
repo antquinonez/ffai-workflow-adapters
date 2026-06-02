@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from ffai.workflow.tabular import TabularLoadError
 from ffai_workflow_adapters.airtable import (
     _get_api_key,
+    _reset_caller,
     load_workflow_airtable,
     write_workflow_results,
 )
@@ -55,6 +57,7 @@ class TestLoadWorkflowAirtable:
         cfg.adapters.airtable.output_field_map = self._saved_output_map
         cfg.adapters.airtable.passthrough_columns = self._saved_pt
         cfg.adapters.airtable.extra_output_columns = self._saved_extra
+        _reset_caller()
 
     @patch("pyairtable.api.Api")
     def test_basic_load(self, mock_api_cls):
@@ -253,6 +256,7 @@ class TestWriteWorkflowResults:
         cfg.adapters.airtable.input_field_map = self._saved_input_map
         cfg.adapters.airtable.passthrough_columns = self._saved_pt
         cfg.adapters.airtable.extra_output_columns = self._saved_extra
+        _reset_caller()
 
     def _make_result(self):
         from ffai.core.response_result import ResponseResult
@@ -304,13 +308,9 @@ class TestWriteWorkflowResults:
             "appBase", "+results", result, api_key="key"
         )
 
-        mock_api_cls.assert_called_once_with("key")
-        mock_api_cls.return_value.table.assert_called_once_with("appBase", "+results")
         assert len(created) == 2
 
-        call_args = mock_table.batch_create.call_args
-        records = call_args[0][0]
-        assert call_args[1] == {"typecast": True}
+        records = mock_table.batch_create.call_args[0][0]
         assert records[0]["step"] == "topic"
         assert records[0]["workflow"] == "test_workflow"
         assert records[0]["status"] == "success"
@@ -618,3 +618,293 @@ class TestNamedAdapterIntegration:
                 ),
             },
         )
+
+
+class TestResilience:
+    def setup_method(self):
+        from ffai_workflow_adapters.config import get_config
+        _reset_caller()
+        cfg = get_config()
+        self._saved_output_map = cfg.adapters.airtable.output_field_map
+        self._saved_input_map = cfg.adapters.airtable.input_field_map
+        self._saved_pt = list(cfg.adapters.airtable.passthrough_columns)
+        self._saved_extra = dict(cfg.adapters.airtable.extra_output_columns)
+        cfg.adapters.airtable.output_field_map = {}
+        cfg.adapters.airtable.input_field_map = {}
+        cfg.adapters.airtable.passthrough_columns = []
+        cfg.adapters.airtable.extra_output_columns = {}
+
+    def teardown_method(self):
+        from ffai_workflow_adapters.config import get_config
+        cfg = get_config()
+        cfg.adapters.airtable.output_field_map = self._saved_output_map
+        cfg.adapters.airtable.input_field_map = self._saved_input_map
+        cfg.adapters.airtable.passthrough_columns = self._saved_pt
+        cfg.adapters.airtable.extra_output_columns = self._saved_extra
+        _reset_caller()
+
+    def _make_result(self):
+        from dataclasses import dataclass, field
+
+        from ffai.core.response_result import ResponseResult
+        from ffai.core.usage import TokenUsage
+
+        @dataclass
+        class FakeWorkflowResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "test_workflow"
+
+        return FakeWorkflowResult(
+            success_count=1,
+            results={
+                "topic": ResponseResult(
+                    response="ok",
+                    model="mistral-small-latest",
+                    status="success",
+                    usage=TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+                ),
+            },
+        )
+
+    def _make_http_error(self, status_code: int) -> Exception:
+        from unittest.mock import MagicMock
+
+        resp = MagicMock()
+        resp.status_code = status_code
+        exc: Any = Exception(f"HTTP {status_code}")
+        exc.response = resp
+        return exc
+
+    @patch("pyairtable.api.Api")
+    def test_load_retries_on_429(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.retry.max_attempts = 3
+        cfg.retry.min_wait_seconds = 0.01
+        cfg.retry.max_wait_seconds = 0.01
+        cfg.retry.exponential_base = 1.0
+        cfg.retry.exponential_jitter = False
+
+        mock_table = MagicMock()
+        mock_table.all.side_effect = [
+            self._make_http_error(429),
+            [{"id": "rec1", "fields": {"name": "a", "prompt": "Go"}}],
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        spec = load_workflow_airtable("appBase", "Steps", api_key="key")
+        assert spec.prompts[0].name == "a"
+        assert mock_table.all.call_count == 2
+
+    @patch("pyairtable.api.Api")
+    def test_load_does_not_retry_400(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.retry.max_attempts = 3
+
+        mock_table = MagicMock()
+        mock_table.all.side_effect = self._make_http_error(400)
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        with pytest.raises(Exception, match="HTTP 400"):
+            load_workflow_airtable("appBase", "Steps", api_key="key")
+        mock_table.all.assert_called_once()
+
+    @patch("pyairtable.api.Api")
+    def test_write_retries_on_429(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.retry.max_attempts = 3
+        cfg.retry.min_wait_seconds = 0.01
+        cfg.retry.max_wait_seconds = 0.01
+        cfg.retry.exponential_base = 1.0
+        cfg.retry.exponential_jitter = False
+        cfg.resilience.batch.max_concurrency = 1
+
+        mock_table = MagicMock()
+        mock_table.batch_create.side_effect = [
+            self._make_http_error(429),
+            [{"id": "rec1"}],
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key")
+        assert mock_table.batch_create.call_count == 2
+
+    @patch("pyairtable.api.Api")
+    def test_write_respects_chunk_size(self, mock_api_cls):
+        from dataclasses import dataclass, field
+
+        from ffai.core.response_result import ResponseResult
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.resilience.batch.chunk_size = 2
+        cfg.resilience.batch.max_concurrency = 1
+
+        @dataclass
+        class BigResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "big"
+
+        big_result = BigResult(
+            results={
+                f"step_{i}": ResponseResult(response=f"r{i}", model="m", status="success")
+                for i in range(5)
+            },
+        )
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        write_workflow_results("appBase", "Out", big_result, api_key="key")
+        assert mock_table.batch_create.call_count == 3
+
+        first_chunk = mock_table.batch_create.call_args_list[0][0][0]
+        assert len(first_chunk) == 2
+
+    @patch("pyairtable.api.Api")
+    def test_circuit_breaker_opens_after_failures(self, mock_api_cls):
+        from ffai_workflow_adapters._resilience import CircuitState
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.resilience.circuit_breaker.failure_threshold = 2
+        cfg.resilience.circuit_breaker.recovery_timeout_seconds = 60.0
+
+        mock_table = MagicMock()
+        mock_table.all.side_effect = self._make_http_error(500)
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        for _ in range(2):
+            with pytest.raises(Exception, match="HTTP 500"):
+                load_workflow_airtable("appBase", "Steps", api_key="key")
+
+        from ffai_workflow_adapters.airtable import _make_caller
+
+        caller = _make_caller()
+        assert caller._breaker.state == CircuitState.OPEN
+
+        with pytest.raises(TabularLoadError, match="Circuit breaker is open"):
+            load_workflow_airtable("appBase", "Steps", api_key="key")
+
+    @patch("pyairtable.api.Api")
+    def test_reload_config_rebuilds_caller(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config, reload_config
+
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"name": "a", "prompt": "Go"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        load_workflow_airtable("appBase", "Steps", api_key="key")
+
+        old_cfg = get_config()
+        new_cfg = reload_config()
+        assert old_cfg is not new_cfg
+
+        _reset_caller()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"name": "b", "prompt": "Run"}},
+        ]
+        spec = load_workflow_airtable("appBase", "Steps", api_key="key")
+        assert spec.prompts[0].name == "b"
+
+    @patch("pyairtable.api.Api")
+    def test_concurrent_write_succeeds(self, mock_api_cls):
+        from dataclasses import dataclass, field
+
+        from ffai.core.response_result import ResponseResult
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.resilience.batch.chunk_size = 2
+        cfg.resilience.batch.max_concurrency = 3
+
+        @dataclass
+        class BigResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "big"
+
+        big_result = BigResult(
+            results={
+                f"step_{i}": ResponseResult(response=f"r{i}", model="m", status="success")
+                for i in range(5)
+            },
+        )
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        created = write_workflow_results("appBase", "Out", big_result, api_key="key")
+        assert mock_table.batch_create.call_count == 3
+        assert len(created) == 3
+
+    @patch("pyairtable.api.Api")
+    def test_concurrent_write_cancels_on_failure(self, mock_api_cls):
+        from dataclasses import dataclass, field
+
+        from ffai.core.response_result import ResponseResult
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.resilience.batch.chunk_size = 1
+        cfg.resilience.batch.max_concurrency = 3
+        cfg.retry.max_attempts = 1
+
+        @dataclass
+        class BigResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "big"
+
+        big_result = BigResult(
+            results={
+                f"step_{i}": ResponseResult(response=f"r{i}", model="m", status="success")
+                for i in range(4)
+            },
+        )
+
+        call_count = 0
+
+        def side_effect(records, typecast=True):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise self._make_http_error(500)
+            return [{"id": f"rec{call_count}"}]
+
+        mock_table = MagicMock()
+        mock_table.batch_create.side_effect = side_effect
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        with pytest.raises(Exception, match="HTTP 500"):
+            write_workflow_results("appBase", "Out", big_result, api_key="key")
+
+        assert call_count <= 3

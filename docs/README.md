@@ -70,7 +70,7 @@ The config system uses [pydantic-settings](https://docs.pydantic.dev/latest/conc
 
 | File | Purpose |
 |------|---------|
-| `config/main.yaml` | Retry settings |
+| `config/main.yaml` | Retry and resilience settings |
 | `config/adapters.yaml` | Per-adapter settings, field maps, passthrough, extra output columns |
 | `config/logging.yaml` | Logging configuration |
 | `config/clients.yaml` | LiteLLM client definitions |
@@ -105,6 +105,46 @@ client_types:
 ```
 
 Reference by name in your data source's `client` column. Leave blank for the default.
+
+### Resilience
+
+Airtable operations are automatically protected by three resilience layers. All settings are in `config/main.yaml` under `resilience:` and tunable via environment variables (e.g., `RESILIENCE__RATE_LIMIT__REQUESTS_PER_SECOND=10`).
+
+#### Rate Limiting
+
+A token-bucket rate limiter prevents exceeding Airtable's API rate limits.
+
+```yaml
+resilience:
+  rate_limit:
+    requests_per_second: 5.0   # sustained request rate
+    burst: 10                    # max burst size
+```
+
+#### Circuit Breaker
+
+Stops calls after repeated failures, then probes with limited requests before fully re-opening.
+
+```yaml
+resilience:
+  circuit_breaker:
+    failure_threshold: 5          # failures before opening
+    recovery_timeout_seconds: 30  # seconds before half-open probe
+    half_open_max_calls: 3        # probe requests allowed in half-open
+```
+
+#### Batch Writes
+
+Write operations are chunked and optionally executed concurrently.
+
+```yaml
+resilience:
+  batch:
+    chunk_size: 10       # records per batch_create call
+    max_concurrency: 3   # parallel threads for batch writes
+```
+
+The circuit breaker and rate limiter apply per call. Retries (configurable under `retry:` in the same file) use exponential backoff with jitter on status codes 429, 502, 503, and 504 only.
 
 ### Environment Variables
 
