@@ -240,7 +240,8 @@ class TestWriteWorkflowResults:
         cfg.adapters.airtable.input_field_map = self._saved_input_map
 
     def _make_result(self):
-        from ffai.core.response_result import ResponseResult, TokenUsage
+        from ffai.core.response_result import ResponseResult
+        from ffai.core.usage import TokenUsage
         from dataclasses import dataclass, field
 
         @dataclass
@@ -361,7 +362,8 @@ class TestInputFieldMapping:
 
 class TestOutputFieldMapping:
     def _make_result(self):
-        from ffai.core.response_result import ResponseResult, TokenUsage
+        from ffai.core.response_result import ResponseResult
+        from ffai.core.usage import TokenUsage
         from dataclasses import dataclass, field
 
         @dataclass
@@ -467,7 +469,8 @@ class TestNamedAdapterIntegration:
         cfg.adapters.airtable.named = {}
 
     def _make_result(self):
-        from ffai.core.response_result import ResponseResult, TokenUsage
+        from ffai.core.response_result import ResponseResult
+        from ffai.core.usage import TokenUsage
         from dataclasses import dataclass, field
 
         @dataclass

@@ -32,6 +32,7 @@ def _create_client():
     config = get_config()
     default_name = config.clients.default_client
     client_cfg = config.clients.get_client_type(default_name)
+    assert client_cfg is not None
 
     model_string = f"{client_cfg.provider_prefix}{client_cfg.default_model}"
     api_key = os.environ.get(client_cfg.api_key_env, "")

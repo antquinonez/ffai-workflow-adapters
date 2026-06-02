@@ -29,6 +29,7 @@ def _create_client():
     config = get_config()
     default_name = config.clients.default_client
     client_cfg = config.clients.get_client_type(default_name)
+    assert client_cfg is not None
 
     model_string = f"{client_cfg.provider_prefix}{client_cfg.default_model}"
     api_key = os.environ.get(client_cfg.api_key_env, "")
@@ -41,6 +42,7 @@ def _create_workflow_workbook(path: Path) -> None:
 
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "Workflow"
     ws.append(["name", "prompt", "client", "history", "temperature", "max_tokens", "Comments", "Priority"])
     ws.append(["topic", "Name a famous scientific discovery in one sentence.", "litellm-mistral-small", None, 0.7, 256, "Generate topic", "High"])
@@ -142,6 +144,7 @@ class TestExcelIntegration:
 
         wb = Workbook()
         ws = wb.active
+        assert ws is not None
         ws.title = "Steps"
         ws.append(["Task", "Instructions", "AI Model", "Context", "Comments"])
         ws.append(["topic", "Name a famous invention in one sentence.", "litellm-mistral-small", None, "Invention step"])
