@@ -34,6 +34,7 @@ def _load_all_configs() -> dict[str, Any]:
     return {
         "logging": _load_yaml_file("logging.yaml").get("logging", {}),
         "retry": main_yaml.get("retry", {}),
+        "resilience": main_yaml.get("resilience", {}),
         "adapters": _load_yaml_file("adapters.yaml").get("adapters", {}),
         "clients": _load_yaml_file("clients.yaml"),
     }
@@ -73,6 +74,28 @@ class RetryConfig(BaseSettings):
     exponential_base: float = 2.0
     exponential_jitter: bool = True
     retry_on_status_codes: list[int] = Field(default_factory=lambda: [429, 503, 502, 504])
+
+
+class RateLimitConfig(BaseSettings):
+    requests_per_second: float = 5.0
+    burst: int = 10
+
+
+class CircuitBreakerConfig(BaseSettings):
+    failure_threshold: int = 5
+    recovery_timeout_seconds: float = 30.0
+    half_open_max_calls: int = 3
+
+
+class BatchConfig(BaseSettings):
+    chunk_size: int = 10
+    max_concurrency: int = 3
+
+
+class ResilienceConfig(BaseSettings):
+    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+    batch: BatchConfig = Field(default_factory=BatchConfig)
 
 
 class _FieldMappedAdapterConfig(BaseSettings):
@@ -163,6 +186,7 @@ class Config(BaseSettings):
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
+    resilience: ResilienceConfig = Field(default_factory=ResilienceConfig)
     adapters: AdaptersConfig = Field(default_factory=AdaptersConfig)
     clients: ClientsConfig = Field(default_factory=ClientsConfig)
 
