@@ -3,6 +3,13 @@ adapters:
     api_key_env: AIRTABLE_API_KEY
     base_id_env: AIRTABLE_BASE_ID
     default_view: ""
+    passthrough_columns:
+      - Comments
+      - Priority
+      - Category
+    extra_output_columns:
+      run_id: "{{run_id}}"
+      run_date: "{{date}}"
     input_field_map:
       Name: name
       Prompt: prompt

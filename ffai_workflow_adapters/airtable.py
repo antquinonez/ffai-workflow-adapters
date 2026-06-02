@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
 from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters._templates import _generate_run_id, _resolve_extra_value
 from ffai_workflow_adapters._validation import validate_schema
 from ffai_workflow_adapters.config import get_config
 
@@ -22,24 +22,6 @@ def _get_api_key(api_key: str | None = None, env_var: str | None = None) -> str:
             f"Airtable API key not provided. Pass api_key parameter or set {key_env} environment variable."
         )
     return key
-
-
-def _records_to_rows(records: Any, field_map: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for record in records:
-        fields = record.get("fields", {})
-        if not fields:
-            continue
-        if field_map:
-            mapped: dict[str, Any] = {}
-            for col, val in fields.items():
-                canonical = field_map.get(col, col)
-                if canonical is not None:
-                    mapped[canonical] = val
-            rows.append(mapped)
-        else:
-            rows.append(dict(fields))
-    return rows
 
 
 def load_workflow_airtable(
@@ -69,6 +51,7 @@ def load_workflow_airtable(
         view = cfg.default_view or None
 
     field_map = cfg.input_field_map or None
+    passthrough = cfg.passthrough_columns or []
 
     key = _get_api_key(api_key, api_key_env)
     api = Api(key)
@@ -79,7 +62,31 @@ def load_workflow_airtable(
         kwargs["view"] = view
 
     records = table.all(**kwargs)
-    rows = _records_to_rows(records, field_map=field_map)
+
+    source_metadata: dict[str, dict[str, Any]] = {}
+    rows: list[dict[str, Any]] = []
+
+    for record in records:
+        fields = record.get("fields", {})
+        if not fields:
+            continue
+
+        if field_map:
+            mapped: dict[str, Any] = {}
+            for col, val in fields.items():
+                canonical = field_map.get(col, col)
+                if canonical is not None:
+                    mapped[canonical] = val
+            rows.append(mapped)
+            step_name = str(mapped.get("name", ""))
+        else:
+            rows.append(dict(fields))
+            step_name = str(fields.get("name", ""))
+
+        if passthrough and step_name:
+            pt_data = {col: fields[col] for col in passthrough if col in fields}
+            if pt_data:
+                source_metadata[step_name] = pt_data
 
     if not rows:
         raise TabularLoadError(
@@ -88,7 +95,7 @@ def load_workflow_airtable(
 
     validate_schema(rows, f"Airtable table '{table_name}' in base '{base_id}'")
 
-    return load_workflow_rows(
+    spec = load_workflow_rows(
         rows,
         name=name,
         description=description,
@@ -96,6 +103,11 @@ def load_workflow_airtable(
         clients=clients,
         tools=tools,
     )
+
+    if source_metadata:
+        object.__setattr__(spec, "_source_metadata", source_metadata)
+
+    return spec
 
 
 def write_workflow_results(
@@ -106,6 +118,8 @@ def write_workflow_results(
     adapter: str | None = None,
     api_key: str | None = None,
     api_key_env: str | None = None,
+    spec: Any | None = None,
+    run_id: str | None = None,
 ) -> list[dict[str, Any]]:
     try:
         from pyairtable.api import Api
@@ -116,12 +130,19 @@ def write_workflow_results(
 
     cfg = get_config().adapters.airtable.resolve(adapter)
     output_map = cfg.output_field_map
+    passthrough_cols = cfg.passthrough_columns or []
+    extra_cols = cfg.extra_output_columns or {}
 
     key = _get_api_key(api_key, api_key_env)
     api = Api(key)
     table = api.table(base_id, table_name)
 
-    timestamp = datetime.now(timezone.utc).isoformat()
+    source_metadata = getattr(spec, "_source_metadata", None) if spec else None
+
+    resolved_run_id = run_id or _generate_run_id()
+    resolved_extras = {col: _resolve_extra_value(tmpl, resolved_run_id) for col, tmpl in extra_cols.items()}
+
+    timestamp = _resolve_extra_value("{{timestamp}}", resolved_run_id)
     records: list[dict[str, Any]] = []
 
     for step_name, step_result in result.results.items():
@@ -140,6 +161,14 @@ def write_workflow_results(
             fields["cost_usd"] = step_result.cost_usd
         if step_result.duration_ms:
             fields["duration_ms"] = round(step_result.duration_ms, 1)
+
+        if source_metadata and step_name in source_metadata:
+            for col in passthrough_cols:
+                if col in source_metadata[step_name]:
+                    fields[col] = source_metadata[step_name][col]
+
+        for col_name, value in resolved_extras.items():
+            fields[col_name] = value
 
         if output_map:
             fields = {output_map.get(k, k): v for k, v in fields.items()}
