@@ -63,6 +63,25 @@ class TestRecordsToRows:
         assert len(rows) == 1
         assert rows[0]["name"] == "a"
 
+    def test_with_field_map(self):
+        records = [
+            {"id": "rec1", "fields": {"Task": "topic", "Instructions": "Go"}},
+            {"id": "rec2", "fields": {"Task": "explain", "Instructions": "Explain.", "Model": "gpt-4o"}},
+        ]
+        field_map = {"Task": "name", "Instructions": "prompt", "Model": "client"}
+        rows = _records_to_rows(records, field_map=field_map)
+        assert len(rows) == 2
+        assert rows[0] == {"name": "topic", "prompt": "Go"}
+        assert rows[1] == {"name": "explain", "prompt": "Explain.", "client": "gpt-4o"}
+
+    def test_unmapped_columns_pass_through(self):
+        records = [{"id": "rec1", "fields": {"name": "a", "prompt": "Go", "extra": "data"}}]
+        field_map = {"extra": "client"}
+        rows = _records_to_rows(records, field_map=field_map)
+        assert rows[0]["name"] == "a"
+        assert rows[0]["prompt"] == "Go"
+        assert rows[0]["client"] == "data"
+
 
 class TestLoadWorkflowAirtable:
     @patch("pyairtable.api.Api")
@@ -285,3 +304,162 @@ class TestWriteWorkflowResults:
                 write_workflow_results(
                     "appBase", "+results", self._make_result(), api_key="key"
                 )
+
+
+class TestInputFieldMapping:
+    @patch("pyairtable.api.Api")
+    def test_custom_column_names_mapped(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"Task": "topic", "Instructions": "Name a discovery."}},
+            {"id": "rec2", "fields": {"Task": "explain", "Instructions": "Explain it.", "AI Model": "gpt-4o"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        cfg.adapters.airtable.input_field_map = {"Task": "name", "Instructions": "prompt", "AI Model": "client"}
+
+        spec = load_workflow_airtable("appBase", "Steps", api_key="key")
+        assert len(spec.prompts) == 2
+        assert spec.prompts[0].name == "topic"
+        assert spec.prompts[0].prompt == "Name a discovery."
+        assert spec.prompts[1].name == "explain"
+        assert spec.prompts[1].client is not None
+        assert spec.prompts[1].client.name == "gpt-4o"
+
+        cfg.adapters.airtable.input_field_map = {}
+
+
+class TestOutputFieldMapping:
+    def _make_result(self):
+        from ffai.core.response_result import ResponseResult, TokenUsage
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class FakeWorkflowResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "test_workflow"
+
+        return FakeWorkflowResult(
+            success_count=1,
+            results={
+                "topic": ResponseResult(
+                    response="Penicillin.",
+                    model="mistral-small-latest",
+                    status="success",
+                    usage=TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+                ),
+            },
+        )
+
+    @patch("pyairtable.api.Api")
+    def test_output_fields_remapped(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        cfg.adapters.airtable.output_field_map = {
+            "step": "Step Name",
+            "response": "Output",
+            "model": "AI Model",
+        }
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key")
+
+        records = mock_table.batch_create.call_args[0][0]
+        rec = records[0]
+        assert "Step Name" in rec
+        assert "Output" in rec
+        assert "AI Model" in rec
+        assert "step" not in rec
+        assert "response" not in rec
+        assert rec["Step Name"] == "topic"
+        assert rec["Output"] == "Penicillin."
+
+        cfg.adapters.airtable.output_field_map = {}
+
+
+class TestNamedAdapterIntegration:
+    @patch("pyairtable.api.Api")
+    def test_load_with_named_adapter(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"Task": "topic", "Instructions": "Go"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        cfg.adapters.airtable.named = {
+            "marketing": {
+                "base_id_env": "AIRTABLE_MARKETING_BASE_ID",
+                "input_field_map": {"Task": "name", "Instructions": "prompt"},
+            },
+        }
+
+        spec = load_workflow_airtable("appBase", "Steps", adapter="marketing", api_key="key")
+        assert spec.prompts[0].name == "topic"
+        assert spec.prompts[0].prompt == "Go"
+
+        cfg.adapters.airtable.named = {}
+
+    @patch("pyairtable.api.Api")
+    def test_write_with_named_adapter(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        from ffai_workflow_adapters.config import reload_config
+
+        cfg = reload_config()
+        cfg.adapters.airtable.named = {
+            "custom": {
+                "output_field_map": {"response": "Output", "step": "StepName"},
+            },
+        }
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, adapter="custom", api_key="key")
+
+        rec = mock_table.batch_create.call_args[0][0][0]
+        assert "StepName" in rec
+        assert "Output" in rec
+        assert rec["StepName"] == "topic"
+        assert rec["Output"] == "Penicillin."
+
+        cfg.adapters.airtable.named = {}
+
+    def _make_result(self):
+        from ffai.core.response_result import ResponseResult, TokenUsage
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class FakeWorkflowResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "test_workflow"
+
+        return FakeWorkflowResult(
+            success_count=1,
+            results={
+                "topic": ResponseResult(
+                    response="Penicillin.",
+                    model="mistral-small-latest",
+                    status="success",
+                    usage=TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+                ),
+            },
+        )

@@ -118,7 +118,7 @@ class TestClientsConfig:
         assert gpt is not None
         assert gpt.default_model == "gpt-4o-mini"
         assert gpt.api_key_env == "OPENAI_API_KEY"
-        assert gpt.fallbacks == ["litellm-mistral-small"]
+        assert gpt.fallbacks == ["mistral/mistral-small-latest"]
 
     def test_get_available_client_types(self):
         data = _load_all_configs()
@@ -177,6 +177,87 @@ class TestConfig:
     def test_get_adapter_api_key_nonexistent(self):
         cfg = Config()
         assert cfg.get_adapter_api_key("nonexistent") is None
+
+
+class TestNamedAdapterResolution:
+    def test_resolve_no_name_returns_base(self):
+        cfg = AirtableAdapterConfig(
+            api_key_env="AIRTABLE_API_KEY",
+            base_id_env="AIRTABLE_BASE_ID",
+        )
+        resolved = cfg.resolve(None)
+        assert resolved.api_key_env == "AIRTABLE_API_KEY"
+        assert resolved.base_id_env == "AIRTABLE_BASE_ID"
+
+    def test_resolve_empty_name_returns_base(self):
+        cfg = AirtableAdapterConfig()
+        resolved = cfg.resolve("")
+        assert resolved is cfg
+
+    def test_resolve_unknown_name_returns_base(self):
+        cfg = AirtableAdapterConfig()
+        resolved = cfg.resolve("nonexistent")
+        assert resolved is cfg
+
+    def test_resolve_named_overrides_scalar(self):
+        cfg = AirtableAdapterConfig(
+            api_key_env="AIRTABLE_API_KEY",
+            base_id_env="AIRTABLE_BASE_ID",
+            named={
+                "marketing": {"base_id_env": "AIRTABLE_MARKETING_BASE_ID"},
+            },
+        )
+        resolved = cfg.resolve("marketing")
+        assert resolved.base_id_env == "AIRTABLE_MARKETING_BASE_ID"
+        assert resolved.api_key_env == "AIRTABLE_API_KEY"
+
+    def test_resolve_named_inherits_base(self):
+        cfg = AirtableAdapterConfig(
+            api_key_env="AIRTABLE_API_KEY",
+            base_id_env="AIRTABLE_BASE_ID",
+            default_view="active",
+            named={
+                "research": {"base_id_env": "AIRTABLE_RESEARCH_BASE_ID"},
+            },
+        )
+        resolved = cfg.resolve("research")
+        assert resolved.base_id_env == "AIRTABLE_RESEARCH_BASE_ID"
+        assert resolved.api_key_env == "AIRTABLE_API_KEY"
+        assert resolved.default_view == "active"
+
+    def test_resolve_named_merges_dicts(self):
+        cfg = AirtableAdapterConfig(
+            input_field_map={"Name": "name"},
+            named={
+                "marketing": {
+                    "input_field_map": {"Task": "name", "Instructions": "prompt"},
+                },
+            },
+        )
+        resolved = cfg.resolve("marketing")
+        assert resolved.input_field_map == {"Name": "name", "Task": "name", "Instructions": "prompt"}
+
+    def test_resolve_named_output_map(self):
+        cfg = AirtableAdapterConfig(
+            output_field_map={"step": "Step"},
+            named={
+                "custom": {
+                    "output_field_map": {"response": "Output", "step": "StepName"},
+                },
+            },
+        )
+        resolved = cfg.resolve("custom")
+        assert resolved.output_field_map == {"step": "StepName", "response": "Output"}
+
+    def test_resolve_named_does_not_mutate_base(self):
+        cfg = AirtableAdapterConfig(
+            base_id_env="AIRTABLE_BASE_ID",
+            named={
+                "marketing": {"base_id_env": "AIRTABLE_MARKETING_BASE_ID"},
+            },
+        )
+        cfg.resolve("marketing")
+        assert cfg.base_id_env == "AIRTABLE_BASE_ID"
 
 
 class TestSingleton:

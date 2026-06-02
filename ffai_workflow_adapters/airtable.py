@@ -23,11 +23,20 @@ def _get_api_key(api_key: str | None = None, env_var: str | None = None) -> str:
     return key
 
 
-def _records_to_rows(records: Any) -> list[dict[str, Any]]:
+def _records_to_rows(records: Any, field_map: dict[str, str] | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for record in records:
         fields = record.get("fields", {})
-        if fields:
+        if not fields:
+            continue
+        if field_map:
+            mapped: dict[str, Any] = {}
+            for col, val in fields.items():
+                canonical = field_map.get(col, col)
+                if canonical is not None:
+                    mapped[canonical] = val
+            rows.append(mapped)
+        else:
             rows.append(dict(fields))
     return rows
 
@@ -36,6 +45,7 @@ def load_workflow_airtable(
     base_id: str,
     table_name: str,
     *,
+    adapter: str | None = None,
     api_key: str | None = None,
     api_key_env: str | None = None,
     view: str | None = None,
@@ -52,8 +62,12 @@ def load_workflow_airtable(
             "pyairtable is required for Airtable loading. Install with: pip install ffai-workflow-adapters[airtable]"
         ) from e
 
+    cfg = get_config().adapters.airtable.resolve(adapter)
+
     if not view:
-        view = get_config().adapters.airtable.default_view or None
+        view = cfg.default_view or None
+
+    field_map = cfg.input_field_map or None
 
     key = _get_api_key(api_key, api_key_env)
     api = Api(key)
@@ -64,7 +78,7 @@ def load_workflow_airtable(
         kwargs["view"] = view
 
     records = table.all(**kwargs)
-    rows = _records_to_rows(records)
+    rows = _records_to_rows(records, field_map=field_map)
 
     if not rows:
         raise TabularLoadError(
@@ -86,6 +100,7 @@ def write_workflow_results(
     table_name: str,
     result: Any,
     *,
+    adapter: str | None = None,
     api_key: str | None = None,
     api_key_env: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -95,6 +110,9 @@ def write_workflow_results(
         raise TabularLoadError(
             "pyairtable is required for Airtable output. Install with: pip install ffai-workflow-adapters[airtable]"
         ) from e
+
+    cfg = get_config().adapters.airtable.resolve(adapter)
+    output_map = cfg.output_field_map
 
     key = _get_api_key(api_key, api_key_env)
     api = Api(key)
@@ -119,6 +137,10 @@ def write_workflow_results(
             fields["cost_usd"] = step_result.cost_usd
         if step_result.duration_ms:
             fields["duration_ms"] = round(step_result.duration_ms, 1)
+
+        if output_map:
+            fields = {output_map.get(k, k): v for k, v in fields.items()}
+
         records.append(fields)
 
-    return table.batch_create(records, typecast=True)
+    return [dict(r) for r in table.batch_create(records, typecast=True)]
