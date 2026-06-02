@@ -1,16 +1,19 @@
 ---
-description: Regenerate API reference documentation
+description: Regenerate documentation (HTML, text, JSON)
 ---
 
-Regenerate the AI-consumable API reference from source.
+Regenerate documentation from source using Sphinx.
 
-1. Run `scripts/generate_api_docs.py` using the project venv Python (`.venv/bin/python`).
-2. Report the output (number of modules, file sizes).
-3. Do not commit the generated files.
+1. Run `make html` (or `make text` / `make json`) from the `docs/` directory.
+2. Report the output (builder used, warnings, output location).
+3. Do not commit the generated files under `docs/_build/`.
 
-The script reads `PUBLIC_MODULES` from its own module list. When adding a new
-public module, add it to `PUBLIC_MODULES` in `scripts/generate_api_docs.py`.
+The API reference in `docs/api/index.rst` uses `sphinx.ext.autodoc` to generate
+documentation from source docstrings. When adding a new public module, add an
+`.. automodule::` directive to `docs/api/index.rst`.
 
-If the script fails, investigate and fix the issue. Common causes:
-- Import errors: check that the module is importable from the project root
-- Missing modules: check that the module name in `PUBLIC_MODULES` matches an actual file
+If the build produces errors about a module (import failure, missing file), fix
+the source or the directive in `docs/api/index.rst`.
+
+The `scripts/generate_api_docs.py` script remains available for generating
+standalone Markdown API docs outside of Sphinx.

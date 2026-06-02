@@ -375,11 +375,11 @@ After adding or modifying docstrings, run these checks in order:
 3. **Type check** — `pyright ffai_workflow_adapters/` (ensures edits didn't
    break types)
 4. **Tests** — `pytest` (ensures no runtime regressions)
-5. **API docs** — `/update-docs` or `scripts/generate_api_docs.py` (regenerates
-   the API reference from the updated docstrings)
+5. **API docs** — `/update-docs` or `cd docs && make html` (regenerates
+   the API reference from the updated docstrings via Sphinx autodoc)
 
 If the doc build produces errors about a module (import failure, missing file),
-fix the source or the module list in `generate_api_docs.py`.
+fix the source or the `.. automodule::` directive in `docs/api/index.rst`.
 
 ## DS-5: Common Mistakes
 

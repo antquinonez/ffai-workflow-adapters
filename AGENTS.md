@@ -23,6 +23,11 @@ pytest -m ''
 
 # Single test file
 pytest tests/test_excel.py
+
+# Docs (HTML, text, JSON)
+cd docs && make html
+cd docs && make text
+cd docs && make json
 ```
 
 ## Architecture
@@ -46,6 +51,15 @@ tests/
   test_excel.py        # Excel unit tests (real openpyxl, mock ffai)
   test_config.py       # Config loading/resolution tests
   integration/         # Real API calls — needs credentials in .env
+
+docs/
+  conf.py              # Sphinx configuration
+  index.md             # Root toctree
+  Makefile             # Build targets: html, text, json
+  api/index.rst        # Autodoc API reference
+  README.md            # Project overview and quickstart
+  airtable.md          # Airtable adapter guide
+  excel.md             # Excel adapter guide
 ```
 
 ## Key patterns
