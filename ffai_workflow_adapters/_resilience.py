@@ -14,12 +14,25 @@ logger = logging.getLogger(__name__)
 
 
 class CircuitState(Enum):
+    """States for the circuit breaker state machine."""
+
     CLOSED = auto()
     OPEN = auto()
     HALF_OPEN = auto()
 
 
 class TokenBucket:
+    """Token bucket rate limiter with thread-safe acquire.
+
+    Tokens refill at a constant rate up to burst capacity. Blocks the
+    calling thread when no tokens are available until one becomes
+    available or the timeout expires.
+
+    Args:
+        rate: Tokens added per second.
+        burst: Maximum token capacity (also the initial token count).
+    """
+
     def __init__(self, rate: float, burst: int):
         self._rate = rate
         self._burst = burst
@@ -28,6 +41,15 @@ class TokenBucket:
         self._lock = threading.Lock()
 
     def acquire(self, timeout: float = 30.0) -> None:
+        """Block until a token is available or the timeout expires.
+
+        Args:
+            timeout: Maximum seconds to wait. Raises TabularLoadError
+                if no token becomes available in time.
+
+        Raises:
+            TabularLoadError: If the acquire times out.
+        """
         deadline = time.monotonic() + timeout
         while True:
             with self._lock:
@@ -47,6 +69,21 @@ class TokenBucket:
 
 
 class CircuitBreaker:
+    """Thread-safe circuit breaker with closed/open/half-open states.
+
+    Allows calls while closed. After ``failure_threshold`` consecutive
+    failures, transitions to open and rejects calls for
+    ``recovery_timeout_seconds``. Then enters half-open, allowing a
+    limited number of probe calls before deciding to close or re-open.
+
+    Args:
+        failure_threshold: Consecutive failures before opening.
+        recovery_timeout_seconds: Seconds to wait in open state before
+            transitioning to half-open.
+        half_open_max_calls: Number of probe calls allowed in half-open
+            state before deciding.
+    """
+
     def __init__(
         self,
         failure_threshold: int = 5,
@@ -73,6 +110,14 @@ class CircuitBreaker:
             return self._failures
 
     def allow(self) -> bool:
+        """Check whether a call is allowed under current breaker state.
+
+        Transitions from open to half-open after the recovery timeout.
+        Limits calls in half-open state to ``half_open_max_calls``.
+
+        Returns:
+            True if the call is allowed, False if rejected.
+        """
         with self._lock:
             if self._state == CircuitState.CLOSED:
                 return True
@@ -90,12 +135,14 @@ class CircuitBreaker:
         assert False
 
     def record_success(self) -> None:
+        """Record a successful call, closing the breaker if half-open."""
         with self._lock:
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.CLOSED
             self._failures = 0
 
     def record_failure(self) -> None:
+        """Record a failed call, opening the breaker if threshold is reached."""
         with self._lock:
             self._failures += 1
             if self._state == CircuitState.HALF_OPEN:
@@ -114,6 +161,23 @@ def with_retry(
     jitter: bool = True,
     retry_on_status_codes: list[int] | None = None,
 ) -> Callable[..., Any]:
+    """Decorator that retries a function with exponential backoff.
+
+    Only retries on exceptions that carry a ``response.status_code``
+    matching one of ``retry_on_status_codes``. Other exceptions are
+    re-raised immediately.
+
+    Args:
+        max_attempts: Maximum number of attempts including the first call.
+        min_wait: Minimum wait in seconds between retries.
+        max_wait: Maximum wait in seconds between retries.
+        exponential_base: Base for exponential backoff calculation.
+        jitter: If True, randomize wait time by +/- 50%.
+        retry_on_status_codes: HTTP status codes that trigger a retry.
+
+    Returns:
+        A decorator that wraps the target function with retry logic.
+    """
     codes = retry_on_status_codes if retry_on_status_codes is not None else [429, 503, 502, 504]
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -154,6 +218,24 @@ def with_retry(
 
 
 class ResilientCaller:
+    """Compose rate limiting, circuit breaking, and retry into one caller.
+
+    Thread-safe. Each call goes through: circuit breaker check, rate
+    limit acquire, then retry-wrapped execution. Failures are recorded
+    in the circuit breaker; successes reset the failure counter.
+
+    Args:
+        bucket: TokenBucket for rate limiting.
+        breaker: CircuitBreaker for failure protection.
+        retry_max_attempts: Maximum retry attempts per call.
+        retry_min_wait: Minimum wait between retries in seconds.
+        retry_max_wait: Maximum wait between retries in seconds.
+        retry_exponential_base: Base for exponential backoff.
+        retry_jitter: If True, randomize retry wait time.
+        retry_on_status_codes: HTTP status codes that trigger retry.
+        acquire_timeout: Maximum seconds to wait for a rate limit token.
+    """
+
     def __init__(
         self,
         bucket: TokenBucket,
@@ -179,6 +261,20 @@ class ResilientCaller:
         self._acquire_timeout = acquire_timeout
 
     def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Execute ``fn`` through rate limiting, circuit breaking, and retry.
+
+        Args:
+            fn: Callable to execute.
+            *args: Positional arguments forwarded to ``fn``.
+            **kwargs: Keyword arguments forwarded to ``fn``.
+
+        Returns:
+            The return value of ``fn``.
+
+        Raises:
+            TabularLoadError: If the circuit breaker is open or rate
+                limit acquire times out.
+        """
         if not self._breaker.allow():
             raise TabularLoadError("Circuit breaker is open")
         self._bucket.acquire(timeout=self._acquire_timeout)
@@ -224,5 +320,14 @@ class ResilientCaller:
 
 
 def batched(iterable: list[Any], size: int) -> Any:
+    """Yield successive chunks of ``size`` from ``iterable``.
+
+    Args:
+        iterable: List to split into chunks.
+        size: Maximum chunk size.
+
+    Yields:
+        Lists of at most ``size`` elements.
+    """
     for i in range(0, len(iterable), size):
         yield iterable[i : i + size]
