@@ -10,6 +10,7 @@ from ffai_workflow_adapters.airtable import (
     _get_api_key,
     _records_to_rows,
     load_workflow_airtable,
+    write_workflow_results,
 )
 
 
@@ -188,3 +189,99 @@ class TestLoadWorkflowAirtable:
         with patch.dict("sys.modules", {"pyairtable.api": None, "pyairtable": None}):
             with pytest.raises(TabularLoadError, match="pyairtable is required"):
                 load_workflow_airtable("appBase", "Steps", api_key="key")
+
+
+class TestWriteWorkflowResults:
+    def _make_result(self):
+        from ffai.core.response_result import ResponseResult, TokenUsage
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class FakeWorkflowResult:
+            results: dict = field(default_factory=dict)
+            success_count: int = 0
+            failed_count: int = 0
+            skipped_count: int = 0
+            aborted: bool = False
+            aborted_count: int = 0
+            spec_name: str = "test_workflow"
+
+        result = FakeWorkflowResult(
+            success_count=2,
+            results={
+                "topic": ResponseResult(
+                    response="Penicillin was discovered.",
+                    model="mistral-small-latest",
+                    status="success",
+                    usage=TokenUsage(input_tokens=41, output_tokens=40, total_tokens=81),
+                    duration_ms=1234.5,
+                ),
+                "explain": ResponseResult(
+                    response="It changed the world.",
+                    model="mistral-small-latest",
+                    status="success",
+                    usage=TokenUsage(input_tokens=84, output_tokens=161, total_tokens=245),
+                    cost_usd=0.002,
+                    duration_ms=2345.6,
+                ),
+            },
+        )
+        return result
+
+    @patch("pyairtable.api.Api")
+    def test_write_basic(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [
+            {"id": "rec1"}, {"id": "rec2"}
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        result = self._make_result()
+        created = write_workflow_results(
+            "appBase", "+results", result, api_key="key"
+        )
+
+        mock_api_cls.assert_called_once_with("key")
+        mock_api_cls.return_value.table.assert_called_once_with("appBase", "+results")
+        assert len(created) == 2
+
+        call_args = mock_table.batch_create.call_args
+        records = call_args[0][0]
+        assert call_args[1] == {"typecast": True}
+        assert records[0]["step"] == "topic"
+        assert records[0]["workflow"] == "test_workflow"
+        assert records[0]["status"] == "success"
+        assert records[0]["input_tokens"] == 41
+        assert records[0]["output_tokens"] == 40
+        assert records[0]["duration_ms"] == 1234.5
+        assert records[1]["step"] == "explain"
+        assert records[1]["cost_usd"] == 0.002
+
+    @patch("pyairtable.api.Api")
+    def test_write_without_usage(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        from ffai.core.response_result import ResponseResult
+
+        result = self._make_result()
+        result.results = {
+            "step1": ResponseResult(response="ok", model="m", status="success"),
+        }
+
+        created = write_workflow_results(
+            "appBase", "+results", result, api_key="key"
+        )
+        assert len(created) == 1
+
+        records = mock_table.batch_create.call_args[0][0]
+        assert "input_tokens" not in records[0]
+        assert "output_tokens" not in records[0]
+
+    def test_missing_pyairtable_raises(self):
+        with patch.dict("sys.modules", {"pyairtable.api": None, "pyairtable": None}):
+            with pytest.raises(TabularLoadError, match="pyairtable is required"):
+                write_workflow_results(
+                    "appBase", "+results", self._make_result(), api_key="key"
+                )

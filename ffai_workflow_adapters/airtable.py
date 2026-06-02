@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
@@ -78,3 +79,46 @@ def load_workflow_airtable(
         clients=clients,
         tools=tools,
     )
+
+
+def write_workflow_results(
+    base_id: str,
+    table_name: str,
+    result: Any,
+    *,
+    api_key: str | None = None,
+    api_key_env: str | None = None,
+) -> list[dict[str, Any]]:
+    try:
+        from pyairtable.api import Api
+    except ImportError as e:
+        raise TabularLoadError(
+            "pyairtable is required for Airtable output. Install with: pip install ffai-workflow-adapters[airtable]"
+        ) from e
+
+    key = _get_api_key(api_key, api_key_env)
+    api = Api(key)
+    table = api.table(base_id, table_name)
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    records: list[dict[str, Any]] = []
+
+    for step_name, step_result in result.results.items():
+        fields: dict[str, Any] = {
+            "workflow": result.spec_name or "",
+            "step": step_name,
+            "status": step_result.status,
+            "response": step_result.response or "",
+            "model": step_result.model or "",
+            "timestamp": timestamp,
+        }
+        if step_result.usage:
+            fields["input_tokens"] = step_result.usage.input_tokens
+            fields["output_tokens"] = step_result.usage.output_tokens
+        if step_result.cost_usd:
+            fields["cost_usd"] = step_result.cost_usd
+        if step_result.duration_ms:
+            fields["duration_ms"] = round(step_result.duration_ms, 1)
+        records.append(fields)
+
+    return table.batch_create(records, typecast=True)
