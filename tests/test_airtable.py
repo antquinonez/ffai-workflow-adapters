@@ -84,6 +84,20 @@ class TestRecordsToRows:
 
 
 class TestLoadWorkflowAirtable:
+    def setup_method(self):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        self._saved_input_map = cfg.adapters.airtable.input_field_map
+        self._saved_output_map = cfg.adapters.airtable.output_field_map
+        cfg.adapters.airtable.input_field_map = {}
+        cfg.adapters.airtable.output_field_map = {}
+
+    def teardown_method(self):
+        from ffai_workflow_adapters.config import get_config
+        cfg = get_config()
+        cfg.adapters.airtable.input_field_map = self._saved_input_map
+        cfg.adapters.airtable.output_field_map = self._saved_output_map
+
     @patch("pyairtable.api.Api")
     def test_basic_load(self, mock_api_cls):
         mock_table = MagicMock()
@@ -211,6 +225,20 @@ class TestLoadWorkflowAirtable:
 
 
 class TestWriteWorkflowResults:
+    def setup_method(self):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        self._saved_output_map = cfg.adapters.airtable.output_field_map
+        self._saved_input_map = cfg.adapters.airtable.input_field_map
+        cfg.adapters.airtable.output_field_map = {}
+        cfg.adapters.airtable.input_field_map = {}
+
+    def teardown_method(self):
+        from ffai_workflow_adapters.config import get_config
+        cfg = get_config()
+        cfg.adapters.airtable.output_field_map = self._saved_output_map
+        cfg.adapters.airtable.input_field_map = self._saved_input_map
+
     def _make_result(self):
         from ffai.core.response_result import ResponseResult, TokenUsage
         from dataclasses import dataclass, field

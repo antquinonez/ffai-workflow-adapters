@@ -3,21 +3,35 @@ adapters:
     api_key_env: AIRTABLE_API_KEY
     base_id_env: AIRTABLE_BASE_ID
     default_view: ""
-    # input_field_map:  # {your_column: canonical_name}
-    #   Name: name
-    #   Prompt: prompt
-    #   Model: client
-    # output_field_map:  # {canonical_name: your_column}
-    #   response: Response
-    #   step: Step
-    # named:               # per-base overrides that inherit from this base config
-    #   marketing:
-    #     base_id_env: AIRTABLE_MARKETING_BASE_ID
-    #     input_field_map:
-    #       Task: name
-    #       Instructions: prompt
-    #   research:
-    #     base_id_env: AIRTABLE_RESEARCH_BASE_ID
-    #     default_view: "active"
+    input_field_map:
+      Name: name
+      Prompt: prompt
+      Model: client
+      History: history
+      Temperature: temperature
+      Max Tokens: max_tokens
+    output_field_map:
+      workflow: Workflow
+      step: Step
+      status: Status
+      response: Response
+      model: Model
+      input_tokens: Input Tokens
+      output_tokens: Output Tokens
+      cost_usd: Cost
+      duration_ms: Duration ms
+      timestamp: Timestamp
+    named:
+      custom:
+        input_field_map:
+          Task: name
+          Instructions: prompt
+          "AI Model": client
+          Context: history
+          Temp: temperature
+        output_field_map:
+          step: Task
+          response: Output
+          model: "AI Model"
   google_sheets:
     api_key_env: GOOGLE_SHEETS_API_KEY
