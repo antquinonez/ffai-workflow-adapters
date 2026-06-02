@@ -121,11 +121,12 @@ from ffai_workflow_adapters import load_workflow_airtable
 spec = load_workflow_airtable(
     "appXXXXXXXXXXXXXX",
     "Workflow Steps",
-    view="basic",              # optional: Airtable view name
-    name="my_workflow",        # optional: workflow name
-    description="...",         # optional: description
-    api_key="pat...",          # optional: overrides AIRTABLE_API_KEY
-    api_key_env="MY_KEY_VAR",  # optional: overrides config env var name
+    adapter="marketing",      # optional: named adapter from config
+    view="basic",             # optional: Airtable view name
+    name="my_workflow",       # optional: workflow name
+    description="...",        # optional: description
+    api_key="pat...",         # optional: overrides AIRTABLE_API_KEY
+    api_key_env="MY_KEY_VAR", # optional: overrides config env var name
     defaults={"temperature": 0.5},
     clients={"reviewer": {"type": "litellm", "model": "gpt-4o"}},
     tools={"search": {...}},
@@ -140,7 +141,12 @@ Write execution results to an Airtable table. Creates one record per workflow st
 from ffai_workflow_adapters import write_workflow_results
 
 result = await ffai.execute_workflow(spec)
-created = write_workflow_results("appXXXXXXXXXXXXXX", "_results", result)
+created = write_workflow_results(
+    "appXXXXXXXXXXXXXX",
+    "_results",
+    result,
+    adapter="marketing",      # optional: named adapter from config
+)
 print(f"Wrote {len(created)} records")
 ```
 
@@ -155,6 +161,127 @@ spec = load_workflow_airtable(base_id, "Steps", view="active")
 # Run a different variant
 spec = load_workflow_airtable(base_id, "Steps", view="extended")
 ```
+
+## Named Adapters
+
+When working with multiple Airtable bases, define named adapter configs in `config/adapters.yaml`. Named configs **inherit** unset fields from the base airtable config.
+
+### Configuration
+
+```yaml
+adapters:
+  airtable:
+    api_key_env: AIRTABLE_API_KEY          # inherited by all named configs
+    base_id_env: AIRTABLE_BASE_ID
+    named:
+      marketing:
+        base_id_env: AIRTABLE_MARKETING_BASE_ID
+        input_field_map:
+          Task: name
+          Instructions: prompt
+          "AI Model": client
+        output_field_map:
+          response: Output
+          step: "Step Name"
+      research:
+        base_id_env: AIRTABLE_RESEARCH_BASE_ID
+        default_view: "active"
+```
+
+### Usage
+
+Pass the `adapter` parameter to load and write functions:
+
+```python
+# Uses the "marketing" named config (custom fields, different base)
+spec = load_workflow_airtable(base_id, "Steps", adapter="marketing")
+write_workflow_results(base_id, "_results", result, adapter="marketing")
+
+# No adapter parameter = base config (default behavior)
+spec = load_workflow_airtable(base_id, "Steps")
+```
+
+### Inheritance Rules
+
+| Field Type | Behavior |
+|-----------|----------|
+| Scalars (e.g., `base_id_env`, `default_view`) | Named config overrides base; unset fields fall back to base |
+| Dicts (e.g., `input_field_map`, `output_field_map`) | Merged — named config values override base, base values fill gaps |
+
+If a named config doesn't exist, the base config is used as-is.
+
+## Field Mapping
+
+If your Airtable columns use custom names, configure mappings in `config/adapters.yaml` instead of renaming your columns.
+
+### Input Field Mapping
+
+Map your Airtable column names to the canonical workflow field names:
+
+```yaml
+adapters:
+  airtable:
+    input_field_map:        # {your_column: canonical_name}
+      Task: name
+      Instructions: prompt
+      "AI Model": client
+      Context: history
+      Temp: temperature
+```
+
+Unmapped columns pass through unchanged. The [column aliases](#column-name-aliases) still apply after mapping.
+
+### Output Field Mapping
+
+Map the canonical result field names to your results table columns:
+
+```yaml
+adapters:
+  airtable:
+    output_field_map:       # {canonical_name: your_column}
+      step: "Step Name"
+      response: Output
+      model: "AI Model"
+      input_tokens: "Tokens In"
+      output_tokens: "Tokens Out"
+```
+
+Unmapped fields use their canonical names.
+
+### Canonical Field Names
+
+**Input fields** (your columns → these names):
+
+| Canonical Name | Description |
+|----------------|-------------|
+| `name` | Step identifier |
+| `prompt` | Prompt text |
+| `client` | Client name from `config/clients.yaml` |
+| `model` | Direct model string |
+| `history` | Comma-separated context steps |
+| `temperature` | Sampling temperature |
+| `max_tokens` | Max tokens |
+| `system_instructions` | System prompt |
+| `condition` | Skip-unless expression |
+| `abort_condition` | Abort-if expression |
+| `response_format` | Response format |
+| `tools` | Comma-separated tool names |
+| `strict` | Strict mode (true/false) |
+
+**Output fields** (these names → your columns):
+
+| Canonical Name | Description |
+|----------------|-------------|
+| `workflow` | Workflow name |
+| `step` | Step name |
+| `status` | Execution status |
+| `response` | AI response text |
+| `model` | Model used |
+| `input_tokens` | Prompt tokens |
+| `output_tokens` | Completion tokens |
+| `cost_usd` | Estimated cost |
+| `duration_ms` | Execution time |
+| `timestamp` | ISO 8601 timestamp |
 
 ## Full Example
 

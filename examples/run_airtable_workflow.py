@@ -17,6 +17,11 @@ Per-step client resolution:
       or "litellm-gpt-4o-mini". These resolve from config/clients.yaml.
     - If the column is blank, the system default client is used.
 
+Named adapters:
+    - Define per-base overrides in config/adapters.yaml under airtable.named
+    - Pass adapter="name" to load_workflow_airtable / write_workflow_results
+    - Named configs inherit unset fields from the base airtable config
+
 Create the "_results" table with these columns:
     workflow      - Single line text
     step          - Single line text
@@ -46,6 +51,7 @@ load_dotenv()
 TABLE_NAME = "Workflow Steps"
 VIEW_NAME = "basic"
 RESULTS_TABLE = "_results"
+ADAPTER_NAME = None  # Set to a named adapter from config/adapters.yaml, e.g. "marketing"
 
 
 def _create_default_client() -> AsyncFFLiteLLMClient:
@@ -65,20 +71,21 @@ def _create_default_client() -> AsyncFFLiteLLMClient:
 
 async def main() -> None:
     config = get_config()
-    base_id = os.environ.get(config.adapters.airtable.base_id_env, "")
+    airtable_cfg = config.adapters.airtable.resolve(ADAPTER_NAME)
+    base_id = os.environ.get(airtable_cfg.base_id_env, "")
     if not base_id:
-        raise ValueError(
-            f"Set {config.adapters.airtable.base_id_env} in your .env file"
-        )
+        raise ValueError(f"Set {airtable_cfg.base_id_env} in your .env file")
 
     default_client = _create_default_client()
     ffai = FFAI(default_client)
 
+    adapter_info = f" (adapter: {ADAPTER_NAME})" if ADAPTER_NAME else ""
     print(f"Default client: {config.clients.default_client}")
-    print(f"Loading workflow from Airtable: {TABLE_NAME} (view: {VIEW_NAME})...\n")
+    print(f"Loading workflow from Airtable{adapter_info}: {TABLE_NAME} (view: {VIEW_NAME})...\n")
     spec = load_workflow_airtable(
         base_id,
         TABLE_NAME,
+        adapter=ADAPTER_NAME,
         view=VIEW_NAME,
         name="airtable_basic",
         description="Basic 2-step workflow from Airtable",
@@ -105,7 +112,7 @@ async def main() -> None:
         print()
 
     print(f"Writing results to Airtable: {RESULTS_TABLE}...")
-    created = write_workflow_results(base_id, RESULTS_TABLE, result)
+    created = write_workflow_results(base_id, RESULTS_TABLE, result, adapter=ADAPTER_NAME)
     print(f"Wrote {len(created)} record(s) to {RESULTS_TABLE}")
 
 
