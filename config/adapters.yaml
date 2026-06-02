@@ -41,6 +41,7 @@ adapters:
       - Priority
       - Category
     extra_output_columns:
+      run_id: "{{run_id}}"
       run_date: "{{date}}"
       batch: "demo-run"
     input_field_map:

@@ -9,6 +9,12 @@ pip install ffai-workflow-adapters
 
 # With Airtable support
 pip install ffai-workflow-adapters[airtable]
+
+# With Excel support
+pip install ffai-workflow-adapters[excel]
+
+# With both
+pip install ffai-workflow-adapters[all]
 ```
 
 ## Quick Start
@@ -65,7 +71,7 @@ The config system uses [pydantic-settings](https://docs.pydantic.dev/latest/conc
 | File | Purpose |
 |------|---------|
 | `config/main.yaml` | Retry settings |
-| `config/adapters.yaml` | Per-adapter settings (API key env vars, defaults) |
+| `config/adapters.yaml` | Per-adapter settings, field maps, passthrough, extra output columns |
 | `config/logging.yaml` | Logging configuration |
 | `config/clients.yaml` | LiteLLM client definitions |
 
@@ -123,9 +129,9 @@ Write workflow execution results back to an Airtable table.
 
 Load a workflow spec from an Excel (.xlsx) file.
 
-### `write_workflow_results_excel(path, result, ...)`
+### `write_workflow_results_excel(result, path=None, *, sheet=None, adapter=None, spec=None, run_id=None)`
 
-Write workflow execution results to an Excel file.
+Write workflow execution results to an Excel file. `path` and `sheet` default to `output_path`/`output_sheet` from config. Pass `spec=` to include passthrough columns. Pass `run_id=` for a custom run ID (auto-generated timestamp if omitted).
 
 ### `get_config()`
 

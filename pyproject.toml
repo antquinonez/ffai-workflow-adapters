@@ -48,7 +48,12 @@ all = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not integration'"
+markers = [
+    "integration: integration tests that call real APIs and execute real workflows",
+    "airtable: integration tests that require AIRTABLE_API_KEY and AIRTABLE_BASE_ID",
+    "excel: integration tests that create real Excel files and execute real workflows",
+]
 
 [tool.setuptools.packages.find]
 include = ["ffai_workflow_adapters*"]
