@@ -13,3 +13,4 @@ build/
 .env
 _ideas/*
 designs/
+docs/api/
