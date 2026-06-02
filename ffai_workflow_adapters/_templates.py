@@ -1,3 +1,4 @@
+"""Template variable resolution for extra output columns."""
 from __future__ import annotations
 
 from datetime import datetime, timezone

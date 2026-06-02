@@ -1,3 +1,4 @@
+"""Resilience primitives for rate limiting, circuit breaking, and retry logic."""
 from __future__ import annotations
 
 import logging

@@ -1,3 +1,4 @@
+"""Configuration loading from YAML files, environment variables, and constructor kwargs."""
 from __future__ import annotations
 
 from pathlib import Path

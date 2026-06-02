@@ -1,3 +1,4 @@
+"""Excel load/write adapter for ffai workflow execution."""
 from __future__ import annotations
 
 import logging
