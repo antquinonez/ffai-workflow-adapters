@@ -180,8 +180,9 @@ class TestLoadWorkflowAirtable:
 
     def test_missing_api_key_raises(self):
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(TabularLoadError, match="AIRTABLE_API_KEY"):
-                load_workflow_airtable("appBase", "Steps")
+            with patch.dict("sys.modules", {"pyairtable.api": MagicMock(), "pyairtable": MagicMock()}):
+                with pytest.raises(TabularLoadError, match="AIRTABLE_API_KEY"):
+                    load_workflow_airtable("appBase", "Steps")
 
     def test_missing_pyairtable_raises(self):
         with patch.dict("sys.modules", {"pyairtable.api": None, "pyairtable": None}):

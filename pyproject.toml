@@ -22,7 +22,9 @@ classifiers = [
 keywords = ["ffai", "workflow", "airtable", "llm", "automation"]
 
 dependencies = [
-    "ffai>=0.1.3",
+    "ffai>=0.1.4",
+    "pydantic-settings>=2.13.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +45,10 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+include = ["ffai_workflow_adapters*"]
+exclude = ["config*", "tests*", "_ideas*"]
 
 [tool.ruff]
 target-version = "py310"

@@ -5,12 +5,19 @@ from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters.config import get_config
 
-def _get_api_key(api_key: str | None = None, env_var: str = "AIRTABLE_API_KEY") -> str:
-    key = api_key or os.environ.get(env_var)
+
+def _get_api_key(api_key: str | None = None, env_var: str | None = None) -> str:
+    if api_key:
+        return api_key
+
+    key_env = env_var or get_config().adapters.airtable.api_key_env
+
+    key = os.environ.get(key_env)
     if not key:
         raise TabularLoadError(
-            f"Airtable API key not provided. Pass api_key parameter or set {env_var} environment variable."
+            f"Airtable API key not provided. Pass api_key parameter or set {key_env} environment variable."
         )
     return key
 
@@ -29,7 +36,7 @@ def load_workflow_airtable(
     table_name: str,
     *,
     api_key: str | None = None,
-    api_key_env: str = "AIRTABLE_API_KEY",
+    api_key_env: str | None = None,
     view: str | None = None,
     name: str = "unnamed",
     description: str = "",
@@ -43,6 +50,9 @@ def load_workflow_airtable(
         raise TabularLoadError(
             "pyairtable is required for Airtable loading. Install with: pip install ffai-workflow-adapters[airtable]"
         ) from e
+
+    if not view:
+        view = get_config().adapters.airtable.default_view or None
 
     key = _get_api_key(api_key, api_key_env)
     api = Api(key)

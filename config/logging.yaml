@@ -1,0 +1,9 @@
+logging:
+  directory: logs
+  filename: workflow_adapters.log
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  rotation:
+    when: midnight
+    interval: 1
+    backup_count: 10

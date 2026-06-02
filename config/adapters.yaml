@@ -1,0 +1,7 @@
+adapters:
+  airtable:
+    api_key_env: AIRTABLE_API_KEY
+    base_id_env: AIRTABLE_BASE_ID
+    default_view: ""
+  google_sheets:
+    api_key_env: GOOGLE_SHEETS_API_KEY

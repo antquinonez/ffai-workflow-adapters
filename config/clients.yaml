@@ -1,0 +1,16 @@
+default_client: litellm-mistral-small
+
+client_types:
+  litellm-mistral-small:
+    type: litellm
+    api_key_env: MISTRAL_API_KEY
+    provider_prefix: "mistral/"
+    default_model: mistral-small-latest
+
+  litellm-gpt-4o-mini:
+    type: litellm
+    api_key_env: OPENAI_API_KEY
+    provider_prefix: "openai/"
+    default_model: gpt-4o-mini
+    fallbacks:
+      - litellm-mistral-small

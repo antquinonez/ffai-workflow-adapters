@@ -1,0 +1,11 @@
+retry:
+  max_attempts: 3
+  min_wait_seconds: 1.0
+  max_wait_seconds: 60.0
+  exponential_base: 2.0
+  exponential_jitter: true
+  retry_on_status_codes:
+    - 429
+    - 503
+    - 502
+    - 504

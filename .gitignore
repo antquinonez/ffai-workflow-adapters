@@ -11,3 +11,4 @@ build/
 .python-version
 .venv/
 .env
+_ideas/*
