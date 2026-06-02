@@ -7,7 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from ffai.workflow.tabular import TabularLoadError
-from ffai_workflow_adapters.excel import load_workflow_excel, write_workflow_results_excel, _resolve_extra_value
+from ffai_workflow_adapters._templates import _resolve_extra_value
+from ffai_workflow_adapters.excel import load_workflow_excel, write_workflow_results_excel
 
 
 def _create_xlsx(path: Path, headers: list[str], rows: list[list], sheet: str | None = None) -> None:

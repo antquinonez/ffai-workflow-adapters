@@ -85,7 +85,9 @@ async def run_workflow(
         print(f"Response:\n{step_result.response}")
         print()
 
+    pt_info = f", passthrough: {airtable_cfg.passthrough_columns}" if airtable_cfg.passthrough_columns else ""
+    extra_info = f", extra: {list(airtable_cfg.extra_output_columns.keys())}" if airtable_cfg.extra_output_columns else ""
     output_map_info = f" (output_field_map: {airtable_cfg.output_field_map})" if airtable_cfg.output_field_map else ""
-    print(f"Writing to {results_table}{output_map_info}...")
-    created = write_workflow_results(base_id, results_table, result, adapter=adapter)
+    print(f"Writing to {results_table}{output_map_info}{pt_info}{extra_info}...")
+    created = write_workflow_results(base_id, results_table, result, adapter=adapter, spec=spec)
     print(f"Wrote {len(created)} record(s) to {results_table}")

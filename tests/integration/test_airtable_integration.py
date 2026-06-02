@@ -105,8 +105,12 @@ class TestAirtableIntegration:
         ffai = _create_client()
         result = asyncio.run(ffai.execute_workflow(spec))
 
-        created = write_workflow_results(base_id, "_results", result)
+        created = write_workflow_results(base_id, "_results", result, spec=spec)
         assert len(created) == result.success_count
+
+        record = created[0]
+        assert "run_id" in record
+        assert "run_date" in record
 
     def test_write_results_with_named_adapter(self):
         from ffai_workflow_adapters.config import reload_config
@@ -125,7 +129,7 @@ class TestAirtableIntegration:
         ffai = _create_client()
         result = asyncio.run(ffai.execute_workflow(spec))
 
-        created = write_workflow_results(base_id, "_results_custom", result, adapter="custom")
+        created = write_workflow_results(base_id, "_results_custom", result, adapter="custom", spec=spec)
         assert len(created) == result.success_count
 
     def test_field_mapping_applied(self):

@@ -8,7 +8,6 @@ import pytest
 from ffai.workflow.tabular import TabularLoadError
 from ffai_workflow_adapters.airtable import (
     _get_api_key,
-    _records_to_rows,
     load_workflow_airtable,
     write_workflow_results,
 )
@@ -36,67 +35,26 @@ class TestGetApiKey:
             assert _get_api_key("explicit") == "explicit"
 
 
-class TestRecordsToRows:
-    def test_basic_records(self):
-        records = [
-            {"id": "rec1", "fields": {"name": "a", "prompt": "Hello"}},
-            {"id": "rec2", "fields": {"name": "b", "prompt": "World"}},
-        ]
-        rows = _records_to_rows(records)
-        assert len(rows) == 2
-        assert rows[0] == {"name": "a", "prompt": "Hello"}
-        assert rows[1] == {"name": "b", "prompt": "World"}
-
-    def test_empty_fields_skipped(self):
-        records = [
-            {"id": "rec1", "fields": {"name": "a", "prompt": "Hello"}},
-            {"id": "rec2", "fields": {}},
-            {"id": "rec3", "fields": {"name": "c", "prompt": "Go"}},
-        ]
-        rows = _records_to_rows(records)
-        assert len(rows) == 2
-        assert rows[1]["name"] == "c"
-
-    def test_missing_fields_key(self):
-        records = [{"id": "rec1"}, {"id": "rec2", "fields": {"name": "a", "prompt": "Go"}}]
-        rows = _records_to_rows(records)
-        assert len(rows) == 1
-        assert rows[0]["name"] == "a"
-
-    def test_with_field_map(self):
-        records = [
-            {"id": "rec1", "fields": {"Task": "topic", "Instructions": "Go"}},
-            {"id": "rec2", "fields": {"Task": "explain", "Instructions": "Explain.", "Model": "gpt-4o"}},
-        ]
-        field_map = {"Task": "name", "Instructions": "prompt", "Model": "client"}
-        rows = _records_to_rows(records, field_map=field_map)
-        assert len(rows) == 2
-        assert rows[0] == {"name": "topic", "prompt": "Go"}
-        assert rows[1] == {"name": "explain", "prompt": "Explain.", "client": "gpt-4o"}
-
-    def test_unmapped_columns_pass_through(self):
-        records = [{"id": "rec1", "fields": {"name": "a", "prompt": "Go", "extra": "data"}}]
-        field_map = {"extra": "client"}
-        rows = _records_to_rows(records, field_map=field_map)
-        assert rows[0]["name"] == "a"
-        assert rows[0]["prompt"] == "Go"
-        assert rows[0]["client"] == "data"
-
-
 class TestLoadWorkflowAirtable:
     def setup_method(self):
         from ffai_workflow_adapters.config import reload_config
         cfg = reload_config()
         self._saved_input_map = cfg.adapters.airtable.input_field_map
         self._saved_output_map = cfg.adapters.airtable.output_field_map
+        self._saved_pt = list(cfg.adapters.airtable.passthrough_columns)
+        self._saved_extra = dict(cfg.adapters.airtable.extra_output_columns)
         cfg.adapters.airtable.input_field_map = {}
         cfg.adapters.airtable.output_field_map = {}
+        cfg.adapters.airtable.passthrough_columns = []
+        cfg.adapters.airtable.extra_output_columns = {}
 
     def teardown_method(self):
         from ffai_workflow_adapters.config import get_config
         cfg = get_config()
         cfg.adapters.airtable.input_field_map = self._saved_input_map
         cfg.adapters.airtable.output_field_map = self._saved_output_map
+        cfg.adapters.airtable.passthrough_columns = self._saved_pt
+        cfg.adapters.airtable.extra_output_columns = self._saved_extra
 
     @patch("pyairtable.api.Api")
     def test_basic_load(self, mock_api_cls):
@@ -223,6 +181,57 @@ class TestLoadWorkflowAirtable:
             with pytest.raises(TabularLoadError, match="pyairtable is required"):
                 load_workflow_airtable("appBase", "Steps", api_key="key")
 
+    @patch("pyairtable.api.Api")
+    def test_passthrough_columns(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+        cfg = get_config()
+        cfg.adapters.airtable.passthrough_columns = ["Comments", "Priority"]
+
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"name": "topic", "prompt": "Go", "Comments": "Check refs", "Priority": "High"}},
+            {"id": "rec2", "fields": {"name": "explain", "prompt": "Expand", "Priority": "Low"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        spec = load_workflow_airtable("appBase", "Steps", api_key="key", name="pt_test")
+        meta = getattr(spec, "_source_metadata", None)
+        assert meta is not None
+        assert meta["topic"]["Comments"] == "Check refs"
+        assert meta["topic"]["Priority"] == "High"
+        assert "Comments" not in meta["explain"]
+        assert meta["explain"]["Priority"] == "Low"
+
+    @patch("pyairtable.api.Api")
+    def test_no_passthrough_without_config(self, mock_api_cls):
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"name": "a", "prompt": "Go", "Comments": "note"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        spec = load_workflow_airtable("appBase", "Steps", api_key="key")
+        assert not hasattr(spec, "_source_metadata")
+
+    @patch("pyairtable.api.Api")
+    def test_passthrough_with_field_mapping(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+        cfg = get_config()
+        cfg.adapters.airtable.input_field_map = {"Task": "name", "Instructions": "prompt"}
+        cfg.adapters.airtable.passthrough_columns = ["Notes"]
+
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"id": "rec1", "fields": {"Task": "step1", "Instructions": "Go", "Notes": "Important"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        spec = load_workflow_airtable("appBase", "Steps", api_key="key")
+        assert spec.prompts[0].name == "step1"
+        meta = getattr(spec, "_source_metadata", None)
+        assert meta is not None
+        assert meta["step1"]["Notes"] == "Important"
+
 
 class TestWriteWorkflowResults:
     def setup_method(self):
@@ -230,14 +239,20 @@ class TestWriteWorkflowResults:
         cfg = reload_config()
         self._saved_output_map = cfg.adapters.airtable.output_field_map
         self._saved_input_map = cfg.adapters.airtable.input_field_map
+        self._saved_pt = list(cfg.adapters.airtable.passthrough_columns)
+        self._saved_extra = dict(cfg.adapters.airtable.extra_output_columns)
         cfg.adapters.airtable.output_field_map = {}
         cfg.adapters.airtable.input_field_map = {}
+        cfg.adapters.airtable.passthrough_columns = []
+        cfg.adapters.airtable.extra_output_columns = {}
 
     def teardown_method(self):
         from ffai_workflow_adapters.config import get_config
         cfg = get_config()
         cfg.adapters.airtable.output_field_map = self._saved_output_map
         cfg.adapters.airtable.input_field_map = self._saved_input_map
+        cfg.adapters.airtable.passthrough_columns = self._saved_pt
+        cfg.adapters.airtable.extra_output_columns = self._saved_extra
 
     def _make_result(self):
         from ffai.core.response_result import ResponseResult
@@ -333,6 +348,115 @@ class TestWriteWorkflowResults:
                 write_workflow_results(
                     "appBase", "+results", self._make_result(), api_key="key"
                 )
+
+    @patch("pyairtable.api.Api")
+    def test_write_with_passthrough(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+        from ffai.workflow.tabular import load_workflow_rows
+
+        cfg = get_config()
+        cfg.adapters.airtable.passthrough_columns = ["Comments", "Priority"]
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        spec = load_workflow_rows(
+            [{"name": "topic", "prompt": "Go"}],
+            name="test",
+        )
+        object.__setattr__(spec, "_source_metadata", {"topic": {"Comments": "see above", "Priority": "High"}})
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key", spec=spec)
+
+        rec = mock_table.batch_create.call_args[0][0][0]
+        assert rec["step"] == "topic"
+        assert rec["Comments"] == "see above"
+        assert rec["Priority"] == "High"
+
+    @patch("pyairtable.api.Api")
+    def test_write_with_extra_output_columns(self, mock_api_cls):
+        import re
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.adapters.airtable.extra_output_columns = {"run_id": "{{run_id}}", "run_date": "{{date}}"}
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key")
+
+        records = mock_table.batch_create.call_args[0][0]
+        assert re.match(r"\d{8}-\d{6}", records[0]["run_id"])
+        assert records[0]["run_id"] == records[1]["run_id"]
+        assert re.match(r"\d{4}-\d{2}-\d{2}", records[0]["run_date"])
+
+    @patch("pyairtable.api.Api")
+    def test_write_with_custom_run_id(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.adapters.airtable.extra_output_columns = {"run_id": "{{run_id}}"}
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key", run_id="batch-42")
+
+        records = mock_table.batch_create.call_args[0][0]
+        assert records[0]["run_id"] == "batch-42"
+        assert records[1]["run_id"] == "batch-42"
+
+    @patch("pyairtable.api.Api")
+    def test_write_passthrough_with_output_field_map(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+        from ffai.workflow.tabular import load_workflow_rows
+
+        cfg = get_config()
+        cfg.adapters.airtable.passthrough_columns = ["Comments"]
+        cfg.adapters.airtable.output_field_map = {"step": "Step Name", "response": "Output"}
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        spec = load_workflow_rows(
+            [{"name": "topic", "prompt": "Go"}],
+            name="test",
+        )
+        object.__setattr__(spec, "_source_metadata", {"topic": {"Comments": "note"}})
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key", spec=spec)
+
+        rec = mock_table.batch_create.call_args[0][0][0]
+        assert rec["Step Name"] == "topic"
+        assert rec["Output"] == "Penicillin was discovered."
+        assert rec["Comments"] == "note"
+        assert "step" not in rec
+
+    @patch("pyairtable.api.Api")
+    def test_write_without_spec_no_passthrough(self, mock_api_cls):
+        from ffai_workflow_adapters.config import get_config
+
+        cfg = get_config()
+        cfg.adapters.airtable.passthrough_columns = ["Comments"]
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        result = self._make_result()
+        write_workflow_results("appBase", "Out", result, api_key="key")
+
+        rec = mock_table.batch_create.call_args[0][0][0]
+        assert "Comments" not in rec
 
 
 class TestInputFieldMapping:
