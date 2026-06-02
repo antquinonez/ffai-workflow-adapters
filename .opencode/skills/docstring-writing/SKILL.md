@@ -53,24 +53,23 @@ The module docstring must come before it.
 ### Class docstrings
 
 ```python
-class TokenBucket:
-    """Token bucket rate limiter with thread-safe acquire.
-
-    Controls request rate to external APIs. Tokens refill at a constant
-    rate up to the burst capacity. Blocks when no tokens are available.
+class RetryConfig(BaseSettings):
+    """Retry behavior for transient API failures.
 
     Attributes:
-        _rate: Tokens added per second.
-        _burst: Maximum token capacity.
-        _tokens: Current token count.
-        _last: Timestamp of last refill.
-        _lock: Thread lock for state mutations.
+        max_attempts: Maximum retry attempts per call.
+        min_wait_seconds: Minimum wait between retries.
+        max_wait_seconds: Maximum wait between retries.
+        exponential_base: Base for exponential backoff calculation.
+        exponential_jitter: If True, randomize wait time by +/- 50%.
+        retry_on_status_codes: HTTP status codes that trigger retry.
     """
 ```
 
-For Pydantic model classes (config.py), list every field in `Attributes:`
-with its type and meaning. The type annotation comes from the source — never
-restate it; describe the semantic purpose instead.
+For Pydantic model classes (config.py), list every public field in
+`Attributes:` with its semantic meaning. Do not restate the type —
+the signature already provides it. Private attributes (starting with `_`)
+are excluded per DS-1.
 
 ### Method and function docstrings
 
@@ -257,32 +256,15 @@ note whether they are thread-safe and what synchronization mechanism they use.
 
 ## DS-3: Mechanical Insertion
 
-### Single docstring — direct edit
+### Prefer the script over direct edits
 
-For one-off additions, use the `edit` tool to insert the docstring as the
-first statement of the function/class body. Match the indentation of the
-existing body.
+Use `scripts/add_docstrings.py` for all insertions when possible. The script
+uses AST-based insertion which is safer than text-based editing — it finds
+exact insertion points and validates syntax after every write.
 
-### Module docstring — insert before `from __future__`
-
-For module docstrings, insert the triple-quoted string as the very first
-line of the file, before any `from __future__` imports:
-
-```python
-# Before:
-from __future__ import annotations
-import os
-
-# After:
-"""Short imperative summary of the module.
-
-Extended description.
-"""
-
-from __future__ import annotations
-
-import os
-```
+Direct edits with the `edit` tool should be reserved for complex multi-line
+docstrings where the script's JSON escaping becomes unwieldy, or when the
+script is unavailable.
 
 ### Audit coverage
 
@@ -330,23 +312,64 @@ For docstrings with Args/Returns sections, use a JSON file:
 
 You can combine `--map` and `--map-file` in the same invocation.
 
+### Direct edits — for complex multi-line docstrings only
+
+When using the `edit` tool to insert a docstring directly, match the
+indentation of the existing body. Insert the docstring as the first
+statement of the function/class body.
+
+**Hazard: classes with leading attribute assignments.** When a class body
+starts with an assignment (e.g., `model_config = SettingsConfigDict(...)`),
+the `edit` tool's `oldString` matching can accidentally consume that line.
+Always verify with `ast.parse` after a direct edit:
+
+```bash
+.venv/bin/python -c "import ast; ast.parse(open('ffai_workflow_adapters/config.py').read()); print('OK')"
+```
+
+### Module docstring — insert before `from __future__`
+
+For module docstrings, insert the triple-quoted string as the very first
+line of the file, before any `from __future__` imports. The script handles
+this automatically. For manual edits:
+
+```python
+# Before:
+from __future__ import annotations
+import os
+
+# After:
+"""Short imperative summary of the module.
+
+Extended description.
+"""
+
+from __future__ import annotations
+
+import os
+```
+
 ### Batch workflow
 
 When adding docstrings to multiple symbols in one session:
 
-1. Start with module docstrings (Layer 1) — these are fastest
-2. Move to public functions (Layer 2) — highest visibility
-3. Then config classes (Layer 3)
-4. Finally supporting internals (Layer 4)
+1. Start with module docstrings (Layer 1) — use `--map`, fastest approach
+2. Move to public functions (Layer 2) — direct edits for Args/Returns
+3. Then config classes (Layer 3) — use `--map` for one-liners, direct edits for Attributes
+4. Finally supporting internals (Layer 4) — mix of `--map` and direct edits
 5. Run `ruff check ffai_workflow_adapters/` and `pyright ffai_workflow_adapters/`
    after each layer
+6. Run `ast.parse` on any file that received a direct edit
 
 ## DS-4: Validation Workflow
 
 After adding or modifying docstrings, run these checks in order:
 
-1. **Syntax** — `ast.parse` (the `add_docstrings.py` script does this automatically
-   for batch inserts; for direct edits, the linter will catch it)
+1. **Syntax** — For direct edits, verify with `ast.parse` immediately:
+   ```bash
+   .venv/bin/python -c "import ast; ast.parse(open('ffai_workflow_adapters/<file>.py').read()); print('OK')"
+   ```
+   The `add_docstrings.py` script does this automatically for batch inserts.
 2. **Lint** — `ruff check ffai_workflow_adapters/` (catches D-series docstring
    violations if enabled, plus general issues)
 3. **Type check** — `pyright ffai_workflow_adapters/` (ensures edits didn't
@@ -368,6 +391,7 @@ fix the source or the module list in `generate_api_docs.py`.
 | Summary in third person | `Loads the workflow` | `Load the workflow` (imperative) |
 | Closing triple-quote misaligned | `"""text\n  """` at wrong indent | Match body indentation exactly |
 | Markdown formatting in docstrings | ``**bold**``, ``# Header`` in docstrings | Use plain text or reStructuredText only |
+| Direct edit eats next line | Class with `model_config = ...` as first body statement | Use `add_docstrings.py` or verify with `ast.parse` after edit |
 
 ## DS-6: Interaction with Other Skills
 

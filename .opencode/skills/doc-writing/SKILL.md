@@ -155,17 +155,6 @@ print(result.cost_usd)       # 3e-06
 
 Configuration-only blocks (`get_config`, `load_workflow_excel` with field maps, `write_workflow_results`) are often the ones that rot first because nobody tests them. Run them too — a renamed parameter or changed import will break them just as dead as the fancy examples.
 
-## Guide Structure
-
-Guides explain how to accomplish a specific task. They assume the reader has completed the quickstart. Structure:
-
-1. **Title** — task-oriented ("Loading Workflows from Excel", not "Excel Adapter API")
-2. **Overview** — 2-3 sentences on what this guide covers
-3. **Steps** — numbered or headed sections, each focused on one sub-task
-4. **Reference** — links to relevant API docs
-
-Guides go in `docs/`.
-
 ## Tutorial Writing
 
 Tutorials are a distinct documentation type from API reference and guides. A tutorial teaches a skill through a hands-on, end-to-end walkthrough. A guide explains how to accomplish a specific task. Both are needed, but tutorials come first in the reader's journey.
