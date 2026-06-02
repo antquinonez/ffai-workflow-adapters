@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters._templates import _generate_run_id, _resolve_extra_value
 from ffai_workflow_adapters._validation import validate_schema
 from ffai_workflow_adapters.config import get_config
 
@@ -18,23 +18,6 @@ CANONICAL_FIELDS = frozenset({
     "condition", "abort_condition", "response_format",
     "response_model", "strict", "tools", "tool_choice",
 })
-
-
-def _generate_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-
-
-def _resolve_extra_value(template: str, run_id: str) -> Any:
-    if template == "{{run_id}}":
-        return run_id
-    if template.startswith("{{now:") and template.endswith("}}"):
-        fmt = template[6:-2]
-        return datetime.now(timezone.utc).strftime(fmt)
-    if template == "{{date}}":
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if template == "{{timestamp}}":
-        return datetime.now(timezone.utc).isoformat()
-    return template
 
 
 def load_workflow_excel(
@@ -182,7 +165,7 @@ def write_workflow_results_excel(
         "input_tokens", "output_tokens", "cost_usd", "duration_ms", "timestamp",
     ]
 
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = _resolve_extra_value("{{timestamp}}", resolved_run_id)
     records: list[dict[str, Any]] = []
 
     for step_name, step_result in result.results.items():
