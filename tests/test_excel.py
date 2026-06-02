@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from ffai.workflow.tabular import TabularLoadError
-from ffai_workflow_adapters.excel import load_workflow_excel, write_workflow_results_excel
+from ffai_workflow_adapters.excel import load_workflow_excel, write_workflow_results_excel, _resolve_extra_value
 
 
 def _create_xlsx(path: Path, headers: list[str], rows: list[list], sheet: str | None = None) -> None:
@@ -15,6 +15,7 @@ def _create_xlsx(path: Path, headers: list[str], rows: list[list], sheet: str | 
 
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
     if sheet:
         ws.title = sheet
     ws.append(headers)
@@ -22,6 +23,35 @@ def _create_xlsx(path: Path, headers: list[str], rows: list[list], sheet: str | 
         ws.append(row)
     wb.save(path)
     wb.close()
+
+
+class TestResolveExtraValue:
+    def test_now_template_custom_format(self):
+        import re
+        result = _resolve_extra_value("{{now:%Y/%m/%d}}", "run-1")
+        assert re.match(r"\d{4}/\d{2}/\d{2}", result)
+
+    def test_now_template_time_format(self):
+        import re
+        result = _resolve_extra_value("{{now:%H:%M:%S}}", "run-1")
+        assert re.match(r"\d{2}:\d{2}:\d{2}", result)
+
+    def test_literal_string_passthrough(self):
+        result = _resolve_extra_value("static-value", "run-1")
+        assert result == "static-value"
+
+    def test_run_id_template(self):
+        result = _resolve_extra_value("{{run_id}}", "batch-42")
+        assert result == "batch-42"
+
+    def test_date_template(self):
+        import re
+        result = _resolve_extra_value("{{date}}", "run-1")
+        assert re.match(r"\d{4}-\d{2}-\d{2}", result)
+
+    def test_timestamp_template(self):
+        result = _resolve_extra_value("{{timestamp}}", "run-1")
+        assert "T" in result
 
 
 class TestLoadWorkflowExcel:
@@ -49,6 +79,7 @@ class TestLoadWorkflowExcel:
         from openpyxl import Workbook
         wb = Workbook()
         ws1 = wb.active
+        assert ws1 is not None
         ws1.title = "Other"
         ws1.append(["x", "y"])
         ws1.append(["a", "b"])
@@ -71,6 +102,7 @@ class TestLoadWorkflowExcel:
         from openpyxl import Workbook
         wb = Workbook()
         ws1 = wb.active
+        assert ws1 is not None
         ws1.title = "Skip"
         ws1.append(["x"])
         ws1.append(["skip"])
@@ -291,7 +323,8 @@ class TestLoadWorkflowExcel:
 
 class TestWriteWorkflowResultsExcel:
     def _make_result(self):
-        from ffai.core.response_result import ResponseResult, TokenUsage
+        from ffai.core.response_result import ResponseResult
+        from ffai.core.usage import TokenUsage
         from dataclasses import dataclass, field
 
         @dataclass
@@ -486,7 +519,7 @@ class TestWriteWorkflowResultsExcel:
             run_id_1 = rows[1][run_id_col]
             run_id_2 = rows[2][run_id_col]
             assert run_id_1 == run_id_2
-            assert re.match(r"\d{8}-\d{6}", run_id_1)
+            assert re.match(r"\d{8}-\d{6}", str(run_id_1))
             wb.close()
         finally:
             cfg.adapters.excel.output_field_map = saved_map
@@ -642,3 +675,11 @@ class TestWriteWorkflowResultsExcel:
         finally:
             cfg.adapters.excel.output_field_map = saved_map
             cfg.adapters.excel.passthrough_columns = saved_pt
+
+    def test_write_missing_openpyxl_raises(self, tmp_path: Path):
+        result = self._make_result()
+        filepath = tmp_path / "results.xlsx"
+
+        with patch.dict("sys.modules", {"openpyxl": None}):
+            with pytest.raises(TabularLoadError, match="openpyxl is required"):
+                write_workflow_results_excel(result, path=filepath)

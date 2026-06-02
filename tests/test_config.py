@@ -177,6 +177,16 @@ class TestConfig:
         cfg = Config()
         assert cfg.get_adapter_api_key("nonexistent") is None
 
+    def test_get_adapter_api_key_no_env_attr(self):
+        cfg = Config()
+        assert cfg.get_adapter_api_key("excel") is None
+
+    def test_get_available_client_types(self):
+        cfg = Config()
+        available = cfg.get_available_client_types()
+        assert "litellm-mistral-small" in available
+        assert "litellm-gpt-4o-mini" in available
+
 
 class TestNamedAdapterResolution:
     def test_resolve_no_name_returns_base(self):
@@ -247,6 +257,20 @@ class TestNamedAdapterResolution:
         )
         resolved = cfg.resolve("custom")
         assert resolved.output_field_map == {"step": "StepName", "response": "Output"}
+
+    def test_resolve_named_dict_field_without_base_dict(self):
+        cfg = AirtableAdapterConfig(
+            input_field_map={"Name": "name"},
+            named={
+                "custom": {
+                    "input_field_map": {"Task": "name", "Instructions": "prompt"},
+                    "extra_output_columns": {"batch": "run-01"},
+                },
+            },
+        )
+        resolved = cfg.resolve("custom")
+        assert resolved.input_field_map == {"Name": "name", "Task": "name", "Instructions": "prompt"}
+        assert resolved.extra_output_columns == {"batch": "run-01"}
 
     def test_resolve_named_does_not_mutate_base(self):
         cfg = AirtableAdapterConfig(
