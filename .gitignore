@@ -13,4 +13,5 @@ build/
 .env
 _ideas/*
 designs/
-docs/api/
+docs/_build/
+examples/excel/results_*.xlsx
