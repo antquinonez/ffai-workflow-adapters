@@ -1,0 +1,19 @@
+name	prompt	condition	abort_condition	temperature
+extract	"Analyze this product review. Extract the pros and cons as a JSON object: {""pros"": [""...""], ""cons"": [""...""]}
+
+Review: ""The laptop is fast and lightweight, but the battery life is terrible and the keyboard feels cheap. The screen is gorgeous though."""			0.3
+sentiment	"Classify the overall sentiment of this review as JSON: {""sentiment"": ""positive""|""negative""|""mixed"", ""confidence"": 0.95}
+
+Review: {{extract.response}}"			0.2
+escalate	"This review has negative sentiment. Write a brief escalation note for a product manager explaining why this review needs attention.
+
+Analysis: {{extract.response}}
+Sentiment: {{sentiment.response}}"	"{{sentiment.response}} contains ""negative"""		0.5
+flag	"Check this review analysis for any inappropriate or harmful content. Respond with JSON: {""safe"": true, ""flagged"": false, ""reason"": """"}
+
+Analysis: {{extract.response}}"		"json_get({{flag.response}}, ""flagged"") == True"	0.1
+report	"Write a one-paragraph summary report for this product review analysis. Include sentiment, key pros/cons, and whether escalation is needed.
+
+Extract: {{extract.response}}
+Sentiment: {{sentiment.response}}
+Escalation: {{escalate.response}}"			0.5
