@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ffai-workflow-adapters"
-version = "0.1.0"
+version = "0.1.1"
 description = "External workflow adapters for FFAI — load workflows from Airtable, Google Sheets, and other tabular sources"
 readme = "README.md"
 requires-python = ">=3.10"
