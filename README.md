@@ -154,6 +154,21 @@ resilience:
 | `OPENAI_API_KEY` | For GPT models | OpenAI API key |
 | `AIRTABLE_API_KEY` | For Airtable | Airtable personal access token |
 | `AIRTABLE_BASE_ID` | For Airtable | Airtable base ID |
+| `OBSERVABILITY__ENABLED` | Optional | Enable OpenTelemetry span emission (`true`/`false`, default `false`) |
+| `OBSERVABILITY__OTEL__ENDPOINT` | Optional | OTLP gRPC endpoint (default `http://localhost:4317`) |
+
+### Observability
+
+Adapter operations emit OpenTelemetry spans when FFAI's observability is enabled. Set `OBSERVABILITY__ENABLED=true` to activate. Requires `pip install ffai[otel]`. When disabled (the default), spans are no-ops with zero overhead.
+
+| Span | Operation |
+|------|-----------|
+| `ffai.adapters.airtable.load` | Load workflow from Airtable table |
+| `ffai.adapters.airtable.write` | Write results to Airtable table |
+| `ffai.adapters.excel.load` | Load workflow from Excel file |
+| `ffai.adapters.excel.write` | Write results to Excel file |
+| `ffai.adapters.resilience.call` | External API call (rate limited, retried) |
+| `ffai.adapters.resilience.retry` | Retry attempt on transient failure |
 
 ## API Reference
 

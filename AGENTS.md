@@ -36,6 +36,9 @@ cd docs && make json
 ffai_workflow_adapters/
   __init__.py          # Public API re-exports
   _validation.py       # Shared schema validation (required fields, type checks)
+  _resilience.py       # Rate limiting, circuit breaker, retry with backoff
+  _spans.py            # OpenTelemetry span helpers (adapter_span, SpanRecorder)
+  _templates.py        # Template variable resolution for extra output columns
   config.py            # Pydantic-settings config from YAML + env vars
   airtable.py          # Airtable load/write adapter
   excel.py             # Excel load/write adapter
@@ -50,6 +53,8 @@ tests/
   test_airtable.py     # Airtable unit tests (mocked)
   test_excel.py        # Excel unit tests (real openpyxl, mock ffai)
   test_config.py       # Config loading/resolution tests
+  test_resilience.py   # Resilience primitives tests + span integration
+  test_spans.py        # Span helpers unit tests (_spans, SpanRecorder, NoOpManager)
   integration/         # Real API calls — needs credentials in .env
 
 docs/
@@ -71,3 +76,4 @@ docs/
 - **Shared validation** — `_validation.validate_schema()` checks required fields (`name`, `prompt`) and numeric types (`temperature`, `max_tokens`). Called by both `airtable.py` and `excel.py` before `load_workflow_rows`.
 - **Passthrough columns** — Columns listed in `passthrough_columns` are preserved from input to output (e.g. Comments, Priority).
 - **Extra output columns** — Template strings like `{{run_id}}`, `{{date}}`, `{{timestamp}}` in `extra_output_columns` are resolved at write time.
+- **Observability** — `_spans.adapter_span()` wraps adapter I/O in OpenTelemetry spans via FFAI's `TelemetryManager`. When OTEL is disabled (default), `NoOpSpan` provides zero overhead. `SpanRecorder` captures spans in tests via `ContextVar` propagation.
