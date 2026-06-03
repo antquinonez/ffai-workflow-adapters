@@ -87,6 +87,15 @@ def _ensure_worksheet(ss_id: str, title: str, headers: list[str], rows: list[lis
     ws.update(all_rows, value_input_option="USER_ENTERED")  # type: ignore[arg-type]
 
 
+def _delete_worksheet(ss_id: str, title: str) -> None:
+    gc = _get_gc()
+    ss = gc.open_by_key(ss_id)
+    existing = [w.title for w in ss.worksheets()]
+    if title in existing:
+        ws = ss.worksheet(title)
+        ss.del_worksheet(ws)
+
+
 def _read_worksheet(ss_id: str, title: str) -> list[list]:
     gc = _get_gc()
     ss = gc.open_by_key(ss_id)
@@ -138,11 +147,7 @@ class TestGoogleSheetsIntegration:
         assert result.success_count == 1
 
         output_ws = "TestResults"
-        gc = _get_gc()
-        ss = gc.open_by_key(ss_id)
-        existing = [w.title for w in ss.worksheets()]
-        if output_ws in existing:
-            ss.worksheet(output_ws).clear()
+        _delete_worksheet(ss_id, output_ws)
 
         rows = write_workflow_results_google_sheets(
             ss_id, result, worksheet=output_ws, spec=spec, run_id="gs-test-1"
@@ -184,19 +189,15 @@ class TestGoogleSheetsIntegration:
         assert result.success_count == 2
 
         output_ws = "TestMultiResults"
-        gc = _get_gc()
-        ss = gc.open_by_key(ss_id)
-        existing = [w.title for w in ss.worksheets()]
-        if output_ws in existing:
-            ss.worksheet(output_ws).clear()
+        _delete_worksheet(ss_id, output_ws)
 
         write_workflow_results_google_sheets(ss_id, result, worksheet=output_ws)
 
         written = _read_worksheet(ss_id, output_ws)
         assert len(written) == 3
-        assert written[0][0] == "workflow"
+        assert written[0][0] == "Workflow"
 
-        step_col = written[0].index("step")
+        step_col = written[0].index("Step")
         assert written[1][step_col] == "topic"
         assert written[2][step_col] == "explain"
 
