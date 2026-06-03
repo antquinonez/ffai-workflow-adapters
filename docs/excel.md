@@ -215,6 +215,21 @@ If your workbook uses different column names, configure `input_field_map` to map
 
 Standard columns → passthrough columns → extra output columns.
 
+## Observability
+
+Adapter operations emit OpenTelemetry spans when FFAI's observability is enabled. Spans cover Excel load and write operations, including file paths, record counts, timing, and error details.
+
+### Enabling
+
+Same as Airtable adapter — see [Airtable adapter - Observability](airtable.md#observability).
+
+### Emitted Spans
+
+| Span Name | Operation | Key Attributes |
+|-----------|-----------|----------------|
+| `ffai.adapters.excel.load` | Load workflow from file | `adapter`, `path`, `sheet`, `columns.count`, `rows.count`, `workflow.name` |
+| `ffai.adapters.excel.write` | Write results to file | `adapter`, `path`, `sheet`, `run_id`, `records.count` |
+
 ## Config Reference
 
 ```yaml

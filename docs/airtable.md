@@ -322,6 +322,39 @@ Unmapped fields use their canonical names.
 | `duration_ms` | Execution time |
 | `timestamp` | ISO 8601 timestamp |
 
+## Observability
+
+Adapter operations emit OpenTelemetry spans when FFAI's observability is enabled. Spans cover Airtable load and write operations, including record counts, timing, and error details.
+
+### Enabling
+
+Adapter spans use FFAI's TelemetryManager. Enable via environment variable:
+
+```
+OBSERVABILITY__ENABLED=true
+OBSERVABILITY__OTEL__ENDPOINT=http://localhost:4317
+```
+
+Or in FFAI's `config/main.yaml`:
+
+```yaml
+observability:
+  enabled: true
+  otel:
+    endpoint: "http://localhost:4317"
+```
+
+Requires `pip install ffai[otel]` for OpenTelemetry packages. When disabled (the default), spans are no-ops with zero overhead.
+
+### Emitted Spans
+
+| Span Name | Operation | Key Attributes |
+|-----------|-----------|----------------|
+| `ffai.adapters.airtable.load` | Load workflow from table | `adapter`, `base_id`, `table`, `view`, `records.raw_count`, `rows.count`, `workflow.name` |
+| `ffai.adapters.airtable.write` | Write results to table | `adapter`, `base_id`, `table`, `run_id`, `records.count`, `batch.chunk_size`, `batch.max_concurrency`, `records.created` |
+| `ffai.adapters.resilience.call` | External API call (Airtable) | `call.success`, `circuit_breaker.failures` |
+| `ffai.adapters.resilience.retry` | Retry attempt | `attempt`, `max_attempts`, `wait_seconds` |
+
 ## Full Example
 
 See [`examples/run_airtable_workflow.py`](../examples/run_airtable_workflow.py) for a complete working script.
