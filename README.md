@@ -1,20 +1,32 @@
 # ffai-workflow-adapters
 
+[![PyPI](https://img.shields.io/pypi/v/ffai-workflow-adapters.svg)](https://pypi.org/project/ffai-workflow-adapters/)
+[![Docs](https://readthedocs.org/projects/ffai-workflow-adapters/badge/?version=latest)](https://ffai-workflow-adapters.readthedocs.io/en/latest/)
+[![CI](https://github.com/antquinonez/ffai-workflow-adapters/actions/workflows/ci.yml/badge.svg)](https://github.com/antquinonez/ffai-workflow-adapters/actions/workflows/ci.yml)
+
 External workflow adapters for [ffai](https://pypi.org/project/ffai/) — define and execute LLM workflows from Airtable, Excel, and other tabular sources. Each row in a spreadsheet becomes a workflow step (name, prompt, model, temperature, etc.).
+
+**Documentation**: https://ffai-workflow-adapters.readthedocs.io/en/latest/
 
 ## Installation
 
 ```bash
 pip install ffai-workflow-adapters
+```
 
-# With Airtable support
+With optional adapters:
+
+```bash
 pip install ffai-workflow-adapters[airtable]
-
-# With Excel support
 pip install ffai-workflow-adapters[excel]
-
-# With both
 pip install ffai-workflow-adapters[all]
+```
+
+Or with uv:
+
+```bash
+uv pip install ffai-workflow-adapters
+uv pip install ffai-workflow-adapters[airtable]
 ```
 
 ## Quick Start
