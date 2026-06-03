@@ -205,8 +205,25 @@ class ExcelAdapterConfig(_FieldMappedAdapterConfig):
 
 
 class GoogleSheetsAdapterConfig(_FieldMappedAdapterConfig):
-    """Google Sheets adapter settings including credentials and worksheet."""
+    """Google Sheets adapter settings including credentials and worksheet.
+
+    Attributes:
+        auth_method: Authentication method — ``"service_account"`` (default),
+            ``"oauth"``, or ``"api_key"``.
+        credentials_env: Environment variable holding the path to the service
+            account JSON file (for ``service_account`` auth) or the path to
+            the OAuth credentials JSON file (for ``oauth`` auth).
+        authorized_user_env: Environment variable holding the path to the
+            authorized user JSON file (for ``oauth`` auth). Optional — gspread
+            stores authorized credentials after the first browser login.
+        api_key_env: Environment variable holding the API key string (for
+            ``api_key`` auth). Only works with public spreadsheets.
+        output_worksheet: Default worksheet name for write results.
+    """
+    auth_method: Literal["service_account", "oauth", "api_key"] = "service_account"
     credentials_env: str = "GOOGLE_SHEETS_CREDENTIALS"
+    authorized_user_env: str = "GOOGLE_SHEETS_AUTHORIZED_USER"
+    api_key_env: str = "GOOGLE_SHEETS_API_KEY"
     output_worksheet: str = "Results"
 
 

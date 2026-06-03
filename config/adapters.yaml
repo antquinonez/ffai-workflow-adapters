@@ -112,7 +112,10 @@ adapters:
           response: Output
           model: "AI Model"
   google_sheets:
+    auth_method: service_account
     credentials_env: GOOGLE_SHEETS_CREDENTIALS
+    authorized_user_env: GOOGLE_SHEETS_AUTHORIZED_USER
+    api_key_env: GOOGLE_SHEETS_API_KEY
     output_worksheet: Results
     passthrough_columns:
       - Comments

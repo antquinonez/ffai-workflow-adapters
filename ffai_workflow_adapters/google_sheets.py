@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
@@ -15,22 +15,76 @@ from ffai_workflow_adapters.config import get_config
 
 logger = logging.getLogger(__name__)
 
+AuthMethod = Literal["service_account", "oauth", "api_key"]
 
-def _get_credentials_file(
+
+def _resolve_auth(
+    *,
+    auth_method: AuthMethod | None = None,
     credentials_file: str | None = None,
     credentials_env: str | None = None,
-    cfg_credentials_env: str | None = None,
-) -> str:
-    if credentials_file:
-        return credentials_file
-    env_var = credentials_env or cfg_credentials_env or "GOOGLE_SHEETS_CREDENTIALS"
-    path = os.environ.get(env_var)
-    if not path:
+    authorized_user_file: str | None = None,
+    authorized_user_env: str | None = None,
+    api_key: str | None = None,
+    api_key_env: str | None = None,
+    cfg_auth_method: AuthMethod = "service_account",
+    cfg_credentials_env: str = "GOOGLE_SHEETS_CREDENTIALS",
+    cfg_authorized_user_env: str = "GOOGLE_SHEETS_AUTHORIZED_USER",
+    cfg_api_key_env: str = "GOOGLE_SHEETS_API_KEY",
+) -> dict[str, Any]:
+    method = auth_method or cfg_auth_method
+
+    if method == "api_key":
+        resolved_key = api_key or os.environ.get(api_key_env or cfg_api_key_env)
+        if not resolved_key:
+            env_var = api_key_env or cfg_api_key_env
+            raise TabularLoadError(
+                f"Google Sheets API key not provided. Pass api_key "
+                f"parameter or set {env_var} environment variable."
+            )
+        return {"method": "api_key", "api_key": resolved_key}
+
+    if method == "oauth":
+        creds_path = credentials_file or os.environ.get(
+            credentials_env or cfg_credentials_env
+        )
+        if not creds_path:
+            env_var = credentials_env or cfg_credentials_env
+            raise TabularLoadError(
+                f"Google Sheets OAuth credentials not provided. Pass credentials_file "
+                f"parameter or set {env_var} environment variable."
+            )
+        resolved_authorized_user = authorized_user_file or os.environ.get(
+            authorized_user_env or cfg_authorized_user_env
+        )
+        return {
+            "method": "oauth",
+            "credentials_filename": creds_path,
+            "authorized_user_filename": resolved_authorized_user,
+        }
+
+    creds_path = credentials_file or os.environ.get(
+        credentials_env or cfg_credentials_env
+    )
+    if not creds_path:
+        env_var = credentials_env or cfg_credentials_env
         raise TabularLoadError(
             f"Google Sheets credentials not provided. Pass credentials_file "
             f"parameter or set {env_var} environment variable."
         )
-    return path
+    return {"method": "service_account", "filename": creds_path}
+
+
+def _get_gc(gspread: Any, auth: dict[str, Any]) -> Any:
+    method = auth["method"]
+    if method == "api_key":
+        return gspread.api_key(auth["api_key"])
+    if method == "oauth":
+        return gspread.oauth(
+            credentials_filename=auth["credentials_filename"],
+            authorized_user_filename=auth.get("authorized_user_filename"),
+        )
+    return gspread.service_account(filename=auth["filename"])
 
 
 _last_config_id: int = 0
@@ -76,8 +130,13 @@ def load_workflow_google_sheets(
     *,
     worksheet: str | int | None = None,
     adapter: str | None = None,
+    auth_method: AuthMethod | None = None,
     credentials_file: str | None = None,
     credentials_env: str | None = None,
+    authorized_user_file: str | None = None,
+    authorized_user_env: str | None = None,
+    api_key: str | None = None,
+    api_key_env: str | None = None,
     name: str = "unnamed",
     description: str = "",
     defaults: dict[str, Any] | None = None,
@@ -95,9 +154,17 @@ def load_workflow_google_sheets(
         spreadsheet_id: Google Sheets spreadsheet ID (from the URL).
         worksheet: Worksheet name or index. Defaults to the first worksheet.
         adapter: Named adapter variant from config/adapters.yaml.
-        credentials_file: Path to service account JSON file.
+        auth_method: Authentication method — ``"service_account"`` (default),
+            ``"oauth"``, or ``"api_key"``. Overrides the config setting.
+        credentials_file: Path to credentials JSON file (service account or
+            OAuth credentials).
         credentials_env: Environment variable name holding the credentials
             file path. Defaults to ``GOOGLE_SHEETS_CREDENTIALS``.
+        authorized_user_file: Path to authorized user JSON file (OAuth only).
+        authorized_user_env: Environment variable name holding the authorized
+            user file path (OAuth only).
+        api_key: Google API key string (api_key auth only, public sheets).
+        api_key_env: Environment variable name holding the API key.
         name: Workflow name assigned to the resulting WorkflowSpec.
         description: Workflow description for the resulting WorkflowSpec.
         defaults: Default values merged into each row.
@@ -122,8 +189,19 @@ def load_workflow_google_sheets(
     cfg = get_config().adapters.google_sheets.resolve(adapter)
     field_map = cfg.input_field_map or None
     passthrough = cfg.passthrough_columns or []
-    creds_file = _get_credentials_file(
-        credentials_file, credentials_env, cfg_credentials_env=cfg.credentials_env,
+
+    auth = _resolve_auth(
+        auth_method=auth_method,
+        credentials_file=credentials_file,
+        credentials_env=credentials_env,
+        authorized_user_file=authorized_user_file,
+        authorized_user_env=authorized_user_env,
+        api_key=api_key,
+        api_key_env=api_key_env,
+        cfg_auth_method=cfg.auth_method,
+        cfg_credentials_env=cfg.credentials_env,
+        cfg_authorized_user_env=cfg.authorized_user_env,
+        cfg_api_key_env=cfg.api_key_env,
     )
 
     with adapter_span(
@@ -132,7 +210,7 @@ def load_workflow_google_sheets(
         spreadsheet_id=spreadsheet_id,
         worksheet=str(worksheet) if worksheet else "first",
     ) as span:
-        gc = gspread.service_account(filename=creds_file)
+        gc = _get_gc(gspread, auth)
         spreadsheet = gc.open_by_key(spreadsheet_id)
 
         if worksheet is None:
@@ -181,8 +259,13 @@ def write_workflow_results_google_sheets(
     *,
     worksheet: str | None = None,
     adapter: str | None = None,
+    auth_method: AuthMethod | None = None,
     credentials_file: str | None = None,
     credentials_env: str | None = None,
+    authorized_user_file: str | None = None,
+    authorized_user_env: str | None = None,
+    api_key: str | None = None,
+    api_key_env: str | None = None,
     spec: Any | None = None,
     run_id: str | None = None,
 ) -> list[list[Any]]:
@@ -198,9 +281,17 @@ def write_workflow_results_google_sheets(
         worksheet: Worksheet name for results. Defaults to the adapter
             config's ``output_worksheet`` or "Results".
         adapter: Named adapter variant for output field mapping.
-        credentials_file: Path to service account JSON file.
+        auth_method: Authentication method — ``"service_account"`` (default),
+            ``"oauth"``, or ``"api_key"``. Overrides the config setting.
+        credentials_file: Path to credentials JSON file (service account or
+            OAuth credentials).
         credentials_env: Environment variable name holding the credentials
             file path.
+        authorized_user_file: Path to authorized user JSON file (OAuth only).
+        authorized_user_env: Environment variable name holding the authorized
+            user file path (OAuth only).
+        api_key: Google API key string (api_key auth only, public sheets).
+        api_key_env: Environment variable name holding the API key.
         spec: The original WorkflowSpec (used for passthrough column data).
         run_id: Unique run identifier. Auto-generated if not provided.
 
@@ -220,8 +311,19 @@ def write_workflow_results_google_sheets(
         ) from e
 
     cfg = get_config().adapters.google_sheets.resolve(adapter)
-    creds_file = _get_credentials_file(
-        credentials_file, credentials_env, cfg_credentials_env=cfg.credentials_env,
+
+    auth = _resolve_auth(
+        auth_method=auth_method,
+        credentials_file=credentials_file,
+        credentials_env=credentials_env,
+        authorized_user_file=authorized_user_file,
+        authorized_user_env=authorized_user_env,
+        api_key=api_key,
+        api_key_env=api_key_env,
+        cfg_auth_method=cfg.auth_method,
+        cfg_credentials_env=cfg.credentials_env,
+        cfg_authorized_user_env=cfg.authorized_user_env,
+        cfg_api_key_env=cfg.api_key_env,
     )
 
     source_metadata = getattr(spec, "_source_metadata", None) if spec else None
@@ -231,15 +333,16 @@ def write_workflow_results_google_sheets(
         adapter=adapter or "default",
         spreadsheet_id=spreadsheet_id,
     ) as span:
-        gc = gspread.service_account(filename=creds_file)
+        gc = _get_gc(gspread, auth)
         spreadsheet = gc.open_by_key(spreadsheet_id)
         ws_name = worksheet or cfg.output_worksheet or "Results"
 
         existing_titles = [w.title for w in spreadsheet.worksheets()]
-        if ws_name in existing_titles:
-            ws = spreadsheet.worksheet(ws_name)
-        else:
+        is_new_worksheet = ws_name not in existing_titles
+        if is_new_worksheet:
             ws = spreadsheet.add_worksheet(title=ws_name, rows=1, cols=1)
+        else:
+            ws = spreadsheet.worksheet(ws_name)
 
         records, column_names, resolved_run_id = build_output_records(
             result,
@@ -255,8 +358,13 @@ def write_workflow_results_google_sheets(
         caller = _make_caller()
         rows_to_append = [[rec.get(col) for col in column_names] for rec in records]
 
+        if is_new_worksheet:
+            all_rows = [column_names, *rows_to_append]
+        else:
+            all_rows = rows_to_append
+
         caller.call(
-            ws.append_rows, rows_to_append, value_input_option="USER_ENTERED"
+            ws.append_rows, all_rows, value_input_option="USER_ENTERED"
         )
 
         span.set_attribute("records.appended", len(rows_to_append))

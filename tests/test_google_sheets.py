@@ -64,6 +64,8 @@ def _mock_gspread(raw_records=None):
     mock_spreadsheet.add_worksheet.return_value = mock_ws
     mock_gc.open_by_key.return_value = mock_spreadsheet
     mock_gspread.service_account.return_value = mock_gc
+    mock_gspread.oauth.return_value = mock_gc
+    mock_gspread.api_key.return_value = mock_gc
     return mock_gspread, mock_gc, mock_spreadsheet, mock_ws
 
 
@@ -362,6 +364,12 @@ class TestWriteWorkflowResultsGoogleSheets:
                 )
 
             mock_ss.add_worksheet.assert_called_once()
+            call_args = new_ws.append_rows.call_args
+            appended = call_args[0][0]
+            assert len(appended) == 3  # 1 header + 2 data rows
+            header = appended[0]
+            assert header[0] == "workflow"
+            assert header[1] == "step"
         finally:
             cfg.adapters.google_sheets.output_field_map = saved
 
@@ -457,3 +465,262 @@ class TestWriteWorkflowResultsGoogleSheets:
             assert span.attributes["records.count"] == 1
         finally:
             cfg.adapters.google_sheets.output_field_map = saved
+
+
+class TestOAuthAuth:
+    def setup_method(self):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+        _reset_caller()
+
+    def test_oauth_load(self, tmp_path):
+        import json
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        creds = tmp_path / "credentials.json"
+        creds.write_text(json.dumps({"installed": {"client_id": "x"}}))
+
+        mock_gs, _, _, _ = _mock_gspread([
+            {"name": "topic", "prompt": "Go"},
+        ])
+
+        with patch.dict("sys.modules", {"gspread": mock_gs}):
+            spec = load_workflow_google_sheets(
+                "ssid123",
+                auth_method="oauth",
+                credentials_file=str(creds),
+                name="oauth_test",
+            )
+
+        assert spec.name == "oauth_test"
+        mock_gs.oauth.assert_called_once_with(
+            credentials_filename=str(creds),
+            authorized_user_filename=None,
+        )
+        mock_gs.service_account.assert_not_called()
+
+    def test_oauth_with_authorized_user(self, tmp_path):
+        import json
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        creds = tmp_path / "credentials.json"
+        creds.write_text(json.dumps({"installed": {"client_id": "x"}}))
+        auth_user = tmp_path / "authorized_user.json"
+        auth_user.write_text(json.dumps({"refresh_token": "tok"}))
+
+        mock_gs, _, _, _ = _mock_gspread([
+            {"name": "topic", "prompt": "Go"},
+        ])
+
+        with patch.dict("sys.modules", {"gspread": mock_gs}):
+            load_workflow_google_sheets(
+                "ssid123",
+                auth_method="oauth",
+                credentials_file=str(creds),
+                authorized_user_file=str(auth_user),
+            )
+
+        mock_gs.oauth.assert_called_once_with(
+            credentials_filename=str(creds),
+            authorized_user_filename=str(auth_user),
+        )
+
+    def test_oauth_missing_credentials_raises(self):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved_env = cfg.adapters.google_sheets.credentials_env
+        cfg.adapters.google_sheets.credentials_env = "NONEXISTENT_OAUTH_VAR"
+        try:
+            mock_gs, _, _, _ = _mock_gspread()
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                with pytest.raises(TabularLoadError, match="OAuth credentials not provided"):
+                    load_workflow_google_sheets(
+                        "ssid123",
+                        auth_method="oauth",
+                    )
+        finally:
+            cfg.adapters.google_sheets.credentials_env = saved_env
+
+    def test_oauth_write(self, tmp_path):
+        import json
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved = dict(cfg.adapters.google_sheets.output_field_map)
+        cfg.adapters.google_sheets.output_field_map = {}
+        try:
+            creds = tmp_path / "credentials.json"
+            creds.write_text(json.dumps({"installed": {"client_id": "x"}}))
+
+            mock_gs, _, _, mock_ws = _mock_gspread()
+            result = _make_result()
+
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                rows = write_workflow_results_google_sheets(
+                    "ssid123",
+                    result,
+                    auth_method="oauth",
+                    credentials_file=str(creds),
+                )
+
+            assert len(rows) == 2
+            mock_gs.oauth.assert_called_once()
+        finally:
+            cfg.adapters.google_sheets.output_field_map = saved
+
+
+class TestApiKeyAuth:
+    def setup_method(self):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+        _reset_caller()
+
+    def test_api_key_load(self, tmp_path):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        mock_gs, _, _, _ = _mock_gspread([
+            {"name": "topic", "prompt": "Go"},
+        ])
+
+        with patch.dict("sys.modules", {"gspread": mock_gs}):
+            spec = load_workflow_google_sheets(
+                "ssid123",
+                auth_method="api_key",
+                api_key="AIzaSyD-test-key",
+                name="apikey_test",
+            )
+
+        assert spec.name == "apikey_test"
+        mock_gs.api_key.assert_called_once_with("AIzaSyD-test-key")
+        mock_gs.service_account.assert_not_called()
+        mock_gs.oauth.assert_not_called()
+
+    def test_api_key_from_env(self, tmp_path):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+
+        mock_gs, _, _, _ = _mock_gspread([
+            {"name": "topic", "prompt": "Go"},
+        ])
+
+        with patch.dict("sys.modules", {"gspread": mock_gs}):
+            with patch.dict("os.environ", {"MY_API_KEY": "AIzaSyD-env-key"}):
+                load_workflow_google_sheets(
+                    "ssid123",
+                    auth_method="api_key",
+                    api_key_env="MY_API_KEY",
+                )
+
+        mock_gs.api_key.assert_called_once_with("AIzaSyD-env-key")
+
+    def test_api_key_missing_raises(self):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved = cfg.adapters.google_sheets.api_key_env
+        cfg.adapters.google_sheets.api_key_env = "NONEXISTENT_API_KEY_VAR"
+        try:
+            mock_gs, _, _, _ = _mock_gspread()
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                with pytest.raises(TabularLoadError, match="API key not provided"):
+                    load_workflow_google_sheets(
+                        "ssid123",
+                        auth_method="api_key",
+                    )
+        finally:
+            cfg.adapters.google_sheets.api_key_env = saved
+
+    def test_api_key_write(self, tmp_path):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved = dict(cfg.adapters.google_sheets.output_field_map)
+        cfg.adapters.google_sheets.output_field_map = {}
+        try:
+            mock_gs, _, _, mock_ws = _mock_gspread()
+            result = _make_result()
+
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                rows = write_workflow_results_google_sheets(
+                    "ssid123",
+                    result,
+                    auth_method="api_key",
+                    api_key="AIzaSyD-test-key",
+                )
+
+            assert len(rows) == 2
+            mock_gs.api_key.assert_called_once_with("AIzaSyD-test-key")
+        finally:
+            cfg.adapters.google_sheets.output_field_map = saved
+
+
+class TestConfigAuthMethod:
+    def setup_method(self):
+        from ffai_workflow_adapters.config import reload_config
+        reload_config()
+        _reset_caller()
+
+    def test_config_auth_method_oauth(self, tmp_path):
+        import json
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved_method = cfg.adapters.google_sheets.auth_method
+        cfg.adapters.google_sheets.auth_method = "oauth"
+        try:
+            creds = tmp_path / "credentials.json"
+            creds.write_text(json.dumps({"installed": {"client_id": "x"}}))
+
+            mock_gs, _, _, _ = _mock_gspread([
+                {"name": "topic", "prompt": "Go"},
+            ])
+
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                load_workflow_google_sheets(
+                    "ssid123",
+                    credentials_file=str(creds),
+                )
+
+            mock_gs.oauth.assert_called_once()
+            mock_gs.service_account.assert_not_called()
+        finally:
+            cfg.adapters.google_sheets.auth_method = saved_method
+
+    def test_config_auth_method_api_key(self, tmp_path):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved_method = cfg.adapters.google_sheets.auth_method
+        cfg.adapters.google_sheets.auth_method = "api_key"
+        try:
+            mock_gs, _, _, _ = _mock_gspread([
+                {"name": "topic", "prompt": "Go"},
+            ])
+
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                with patch.dict("os.environ", {"GOOGLE_SHEETS_API_KEY": "cfg-key"}):
+                    load_workflow_google_sheets("ssid123")
+
+            mock_gs.api_key.assert_called_once_with("cfg-key")
+        finally:
+            cfg.adapters.google_sheets.auth_method = saved_method
+
+    def test_kwarg_auth_method_overrides_config(self, tmp_path):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        saved_method = cfg.adapters.google_sheets.auth_method
+        cfg.adapters.google_sheets.auth_method = "service_account"
+        try:
+            mock_gs, _, _, _ = _mock_gspread([
+                {"name": "topic", "prompt": "Go"},
+            ])
+
+            with patch.dict("sys.modules", {"gspread": mock_gs}):
+                load_workflow_google_sheets(
+                    "ssid123",
+                    auth_method="api_key",
+                    api_key="override-key",
+                )
+
+            mock_gs.api_key.assert_called_once_with("override-key")
+            mock_gs.service_account.assert_not_called()
+        finally:
+            cfg.adapters.google_sheets.auth_method = saved_method
