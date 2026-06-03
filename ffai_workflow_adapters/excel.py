@@ -7,6 +7,7 @@ from typing import Any
 
 from ffai.workflow.tabular import TabularLoadError, load_workflow_rows
 
+from ffai_workflow_adapters._spans import adapter_span
 from ffai_workflow_adapters._templates import _generate_run_id, _resolve_extra_value
 from ffai_workflow_adapters._validation import validate_schema
 from ffai_workflow_adapters.config import get_config
@@ -69,89 +70,99 @@ def load_workflow_excel(
     if not filepath.exists():
         raise TabularLoadError(f"Excel file not found: {filepath}")
 
-    wb = load_workbook(filepath, read_only=True, data_only=True)
+    with adapter_span(
+        "excel.load",
+        adapter=adapter or "default",
+        path=str(filepath),
+        sheet=str(sheet) if sheet else "active",
+    ) as span:
+        wb = load_workbook(filepath, read_only=True, data_only=True)
 
-    if sheet is None:
-        ws = wb.active
-    elif isinstance(sheet, int):
-        ws = wb.worksheets[sheet]
-    else:
-        ws = wb[sheet]
-    assert ws is not None
+        if sheet is None:
+            ws = wb.active
+        elif isinstance(sheet, int):
+            ws = wb.worksheets[sheet]
+        else:
+            ws = wb[sheet]
+        assert ws is not None
 
-    rows_iter = ws.iter_rows(values_only=True)
-    header = next(rows_iter, None)
-    if not header:
+        rows_iter = ws.iter_rows(values_only=True)
+        header = next(rows_iter, None)
+        if not header:
+            wb.close()
+            raise TabularLoadError(f"Excel file '{filepath}' has no header row")
+
+        headers = [str(h).strip() if h is not None else "" for h in header]
+        span.set_attribute("columns.count", len(headers))
+
+        cfg = get_config().adapters.excel.resolve(adapter)
+        field_map = cfg.input_field_map or None
+        passthrough = cfg.passthrough_columns or []
+
+        valid_columns = CANONICAL_FIELDS | set(passthrough)
+        if field_map:
+            recognized = set(field_map.keys()) | valid_columns
+            unmapped = [h for h in headers if h and h not in recognized]
+        else:
+            unmapped = [h for h in headers if h and h not in valid_columns]
+        if unmapped:
+            logger.warning(
+                "Unrecognized columns in '%s' (sheet '%s'): %s. "
+                "These will be passed through unless they match a canonical field.",
+                filepath,
+                getattr(ws, "title", "?"),
+                unmapped,
+            )
+
+        rows: list[dict[str, Any]] = []
+        source_metadata: dict[str, dict[str, Any]] = {}
+
+        for row in rows_iter:
+            record: dict[str, Any] = {}
+            for i, val in enumerate(row):
+                if i < len(headers) and headers[i]:
+                    record[headers[i]] = val
+            if any(v is not None for v in record.values()):
+                if field_map:
+                    mapped: dict[str, Any] = {}
+                    for col, val in record.items():
+                        canonical = field_map.get(col, col)
+                        if canonical is not None:
+                            mapped[canonical] = val
+                    rows.append(mapped)
+                    step_name = str(mapped.get("name", ""))
+                else:
+                    rows.append(record)
+                    step_name = str(record.get("name", ""))
+
+                if passthrough and step_name:
+                    pt_data = {col: record[col] for col in passthrough if col in record}
+                    if pt_data:
+                        source_metadata[step_name] = pt_data
+
         wb.close()
-        raise TabularLoadError(f"Excel file '{filepath}' has no header row")
 
-    headers = [str(h).strip() if h is not None else "" for h in header]
+        if not rows:
+            raise TabularLoadError(f"Excel file '{filepath}' contains no data rows")
 
-    cfg = get_config().adapters.excel.resolve(adapter)
-    field_map = cfg.input_field_map or None
-    passthrough = cfg.passthrough_columns or []
+        validate_schema(rows, str(filepath))
 
-    valid_columns = CANONICAL_FIELDS | set(passthrough)
-    if field_map:
-        recognized = set(field_map.keys()) | valid_columns
-        unmapped = [h for h in headers if h and h not in recognized]
-    else:
-        unmapped = [h for h in headers if h and h not in valid_columns]
-    if unmapped:
-        logger.warning(
-            "Unrecognized columns in '%s' (sheet '%s'): %s. "
-            "These will be passed through unless they match a canonical field.",
-            filepath,
-            getattr(ws, "title", "?"),
-            unmapped,
+        spec = load_workflow_rows(
+            rows,
+            name=name,
+            description=description,
+            defaults=defaults,
+            clients=clients,
+            tools=tools,
         )
 
-    rows: list[dict[str, Any]] = []
-    source_metadata: dict[str, dict[str, Any]] = {}
+        span.set_attribute("rows.count", len(rows))
+        span.set_attribute("workflow.name", name)
 
-    for row in rows_iter:
-        record: dict[str, Any] = {}
-        for i, val in enumerate(row):
-            if i < len(headers) and headers[i]:
-                record[headers[i]] = val
-        if any(v is not None for v in record.values()):
-            if field_map:
-                mapped: dict[str, Any] = {}
-                for col, val in record.items():
-                    canonical = field_map.get(col, col)
-                    if canonical is not None:
-                        mapped[canonical] = val
-                rows.append(mapped)
-                step_name = str(mapped.get("name", ""))
-            else:
-                rows.append(record)
-                step_name = str(record.get("name", ""))
+        if source_metadata:
+            object.__setattr__(spec, "_source_metadata", source_metadata)
 
-            if passthrough and step_name:
-                pt_data = {col: record[col] for col in passthrough if col in record}
-                if pt_data:
-                    source_metadata[step_name] = pt_data
-
-    wb.close()
-
-    if not rows:
-        raise TabularLoadError(f"Excel file '{filepath}' contains no data rows")
-
-    validate_schema(rows, str(filepath))
-
-    spec = load_workflow_rows(
-        rows,
-        name=name,
-        description=description,
-        defaults=defaults,
-        clients=clients,
-        tools=tools,
-    )
-
-    if source_metadata:
-        object.__setattr__(spec, "_source_metadata", source_metadata)
-
-    return spec
+        return spec
 
 
 def write_workflow_results_excel(
@@ -209,76 +220,86 @@ def write_workflow_results_excel(
     extra_cols = cfg.extra_output_columns or {}
 
     resolved_run_id = run_id or _generate_run_id()
-    resolved_extras = {col: _resolve_extra_value(tmpl, resolved_run_id) for col, tmpl in extra_cols.items()}
 
-    canonical_fields = [
-        "workflow", "step", "status", "response", "model",
-        "input_tokens", "output_tokens", "cost_usd", "duration_ms", "timestamp",
-    ]
+    with adapter_span(
+        "excel.write",
+        adapter=adapter or "default",
+        path=str(filepath),
+        sheet=sheet_name,
+        run_id=resolved_run_id,
+    ) as span:
+        resolved_extras = {col: _resolve_extra_value(tmpl, resolved_run_id) for col, tmpl in extra_cols.items()}
 
-    timestamp = _resolve_extra_value("{{timestamp}}", resolved_run_id)
-    records: list[dict[str, Any]] = []
+        canonical_fields = [
+            "workflow", "step", "status", "response", "model",
+            "input_tokens", "output_tokens", "cost_usd", "duration_ms", "timestamp",
+        ]
 
-    for step_name, step_result in result.results.items():
-        fields: dict[str, Any] = {
-            "workflow": result.spec_name or "",
-            "step": step_name,
-            "status": step_result.status,
-            "response": step_result.response or "",
-            "model": step_result.model or "",
-            "timestamp": timestamp,
-        }
-        if step_result.usage:
-            fields["input_tokens"] = step_result.usage.input_tokens
-            fields["output_tokens"] = step_result.usage.output_tokens
-        if step_result.cost_usd:
-            fields["cost_usd"] = step_result.cost_usd
-        if step_result.duration_ms:
-            fields["duration_ms"] = round(step_result.duration_ms, 1)
+        timestamp = _resolve_extra_value("{{timestamp}}", resolved_run_id)
+        records: list[dict[str, Any]] = []
 
-        if source_metadata and step_name in source_metadata:
-            for col in passthrough_cols:
-                if col in source_metadata[step_name]:
-                    fields[col] = source_metadata[step_name][col]
+        for step_name, step_result in result.results.items():
+            fields: dict[str, Any] = {
+                "workflow": result.spec_name or "",
+                "step": step_name,
+                "status": step_result.status,
+                "response": step_result.response or "",
+                "model": step_result.model or "",
+                "timestamp": timestamp,
+            }
+            if step_result.usage:
+                fields["input_tokens"] = step_result.usage.input_tokens
+                fields["output_tokens"] = step_result.usage.output_tokens
+            if step_result.cost_usd:
+                fields["cost_usd"] = step_result.cost_usd
+            if step_result.duration_ms:
+                fields["duration_ms"] = round(step_result.duration_ms, 1)
 
-        for col_name, value in resolved_extras.items():
-            fields[col_name] = value
+            if source_metadata and step_name in source_metadata:
+                for col in passthrough_cols:
+                    if col in source_metadata[step_name]:
+                        fields[col] = source_metadata[step_name][col]
 
-        if output_map:
-            fields = {output_map.get(k, k): v for k, v in fields.items()}
+            for col_name, value in resolved_extras.items():
+                fields[col_name] = value
 
-        records.append(fields)
+            if output_map:
+                fields = {output_map.get(k, k): v for k, v in fields.items()}
 
-    passthrough_headers = [output_map.get(c, c) if output_map else c for c in passthrough_cols]
-    extra_headers = [output_map.get(c, c) if output_map else c for c in extra_cols]
-    column_names = (
-        [output_map.get(f, f) if output_map else f for f in canonical_fields]
-        + passthrough_headers
-        + extra_headers
-    )
+            records.append(fields)
 
-    if filepath.exists():
-        wb = load_workbook(filepath)
-    else:
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        wb = Workbook()
-        ws_active = wb.active
-        assert ws_active is not None
-        ws_active.title = sheet_name
+        span.set_attribute("records.count", len(records))
 
-    if sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-    else:
-        ws = wb.create_sheet(sheet_name)
+        passthrough_headers = [output_map.get(c, c) if output_map else c for c in passthrough_cols]
+        extra_headers = [output_map.get(c, c) if output_map else c for c in extra_cols]
+        column_names = (
+            [output_map.get(f, f) if output_map else f for f in canonical_fields]
+            + passthrough_headers
+            + extra_headers
+        )
 
-    has_header = any(ws.cell(1, col).value is not None for col in range(1, len(column_names) + 1))
-    if not has_header:
-        for col_idx, col_name in enumerate(column_names, start=1):
-            ws.cell(1, col_idx, col_name)
+        if filepath.exists():
+            wb = load_workbook(filepath)
+        else:
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            wb = Workbook()
+            ws_active = wb.active
+            assert ws_active is not None
+            ws_active.title = sheet_name
 
-    for rec in records:
-        ws.append([rec.get(col) for col in column_names])
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+        else:
+            ws = wb.create_sheet(sheet_name)
 
-    wb.save(filepath)
-    wb.close()
-    return str(filepath)
+        has_header = any(ws.cell(1, col).value is not None for col in range(1, len(column_names) + 1))
+        if not has_header:
+            for col_idx, col_name in enumerate(column_names, start=1):
+                ws.cell(1, col_idx, col_name)
+
+        for rec in records:
+            ws.append([rec.get(col) for col in column_names])
+
+        wb.save(filepath)
+        wb.close()
+        return str(filepath)
