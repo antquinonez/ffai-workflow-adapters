@@ -84,8 +84,11 @@ Each layer document must include:
 
 ### Writing rules
 
-1. **Layers are additive.** L1-L(N-1) add new files only. Only LN modifies
-   existing files. This lets early layers ship independently.
+1. **Modifications must be safe.** Any layer may modify existing files as
+   long as the change is backward-compatible: new classes with defaults,
+   new config fields, new YAML sections, new exports. Refactoring or
+   breaking changes to existing code are restricted to LN only. The test
+   for safety: "does every existing test still pass after this layer?"
 2. **Port, don't wrap.** Copy code with minimal adaptation rather than
    creating adapter layers.
 3. **Show actual code.** Every design must include the actual function
@@ -94,6 +97,11 @@ Each layer document must include:
 4. **Specify import paths exactly.** Write `from ffai_workflow_adapters.config import ...`
    not `import the config module`.
 5. **Address `__init__.py`** in each layer.
+6. **Co-locate prerequisite changes.** If a layer depends on a config
+   class or YAML section, add those changes in the same layer document
+   under "Files modified" — do not defer them to a later layer. The
+   overview's dependency order must reflect these intra-layer
+   prerequisites.
 
 ## Phase 3: Review
 
@@ -127,9 +135,15 @@ and ALL referenced source files. Check for:
 |-------|---------|
 | HIGH | Will cause runtime error or incorrect behavior |
 | MEDIUM | Will cause import failure, type error, or test failure |
-| LOW | Style inconsistency, documentation gap |
+| LOW | Missing code snippets, implicit knowledge not written down,
+         style inconsistency, documentation gap |
 
-### Fix all HIGH and MEDIUM issues before proceeding to implementation.
+### Fix all issues before proceeding to implementation.
+
+LOW issues are often cheaper to fix in the design than to discover
+during implementation. A missing import path or an underspecified
+config change that seems obvious now won't be obvious to the
+implementer — or to you in three days.
 
 ## Phase 4: Implement
 
