@@ -6,10 +6,14 @@ from unittest.mock import patch
 from ffai_workflow_adapters.config import (
     AdaptersConfig,
     AirtableAdapterConfig,
+    BatchConfig,
+    CircuitBreakerConfig,
     ClientsConfig,
     Config,
     LoggingConfig,
     LoggingRotationConfig,
+    RateLimitConfig,
+    ResilienceConfig,
     RetryConfig,
     _load_all_configs,
     _load_yaml_file,
@@ -49,6 +53,7 @@ class TestYamlLoading:
         data = _load_all_configs()
         assert "retry" in data
         assert "logging" in data
+        assert "resilience" in data
         assert "adapters" in data
         assert "clients" in data
 
@@ -281,6 +286,39 @@ class TestNamedAdapterResolution:
         )
         cfg.resolve("marketing")
         assert cfg.base_id_env == "AIRTABLE_BASE_ID"
+
+
+class TestResilienceConfig:
+    def test_defaults(self):
+        cfg = ResilienceConfig()
+        assert cfg.rate_limit.requests_per_second == 5.0
+        assert cfg.rate_limit.burst == 10
+        assert cfg.circuit_breaker.failure_threshold == 5
+        assert cfg.circuit_breaker.recovery_timeout_seconds == 30.0
+        assert cfg.circuit_breaker.half_open_max_calls == 3
+        assert cfg.batch.chunk_size == 10
+        assert cfg.batch.max_concurrency == 3
+
+    def test_from_yaml(self):
+        data = _load_all_configs()
+        assert "resilience" in data
+        cfg = ResilienceConfig(**data["resilience"])
+        assert cfg.rate_limit.requests_per_second == 5.0
+        assert cfg.batch.chunk_size == 10
+
+    def test_constructor_override(self):
+        cfg = ResilienceConfig(rate_limit=RateLimitConfig(requests_per_second=100))
+        assert cfg.rate_limit.requests_per_second == 100
+
+    def test_env_override(self):
+        with patch.dict(os.environ, {"RESILIENCE__RATE_LIMIT__REQUESTS_PER_SECOND": "100"}):
+            cfg = Config()
+            assert cfg.resilience.rate_limit.requests_per_second == 100.0
+
+    def test_sub_model_defaults(self):
+        assert RateLimitConfig().requests_per_second == 5.0
+        assert CircuitBreakerConfig().failure_threshold == 5
+        assert BatchConfig().chunk_size == 10
 
 
 class TestSingleton:

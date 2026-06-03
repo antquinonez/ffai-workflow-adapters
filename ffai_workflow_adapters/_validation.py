@@ -1,3 +1,4 @@
+"""Shared schema validation for tabular workflow data."""
 from __future__ import annotations
 
 from typing import Any
@@ -8,6 +9,22 @@ REQUIRED_FIELDS = frozenset({"name", "prompt"})
 
 
 def validate_schema(rows: list[dict[str, Any]], source_label: str) -> None:
+    """Verify that workflow rows contain required fields and valid numeric types.
+
+    Checks that at least one row has ``name`` and ``prompt`` columns. If
+    ``temperature`` or ``max_tokens`` columns are present, validates that
+    their values are numeric. Raises with row-level detail identifying
+    the offending field and its actual value.
+
+    Args:
+        rows: List of row dicts from the tabular source.
+        source_label: Human-readable label for error messages (e.g.,
+            the file path or table name).
+
+    Raises:
+        TabularLoadError: If required columns are missing or numeric
+            fields contain non-numeric values.
+    """
     all_keys: set[str] = set()
     for row in rows:
         all_keys.update(row.keys())

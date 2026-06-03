@@ -9,3 +9,15 @@ retry:
     - 503
     - 502
     - 504
+
+resilience:
+  rate_limit:
+    requests_per_second: 5.0
+    burst: 10
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_seconds: 30.0
+    half_open_max_calls: 3
+  batch:
+    chunk_size: 10
+    max_concurrency: 3
