@@ -2,11 +2,12 @@
 
 External workflow adapters for [ffai](https://pypi.org/project/ffai/) — load and execute workflows from Airtable, Excel, and other tabular sources.
 
+See the [project README](https://github.com/anomalyco/ffai-workflow-adapters#readme) for installation, quick start, and configuration.
+
 ```{toctree}
 :maxdepth: 2
-:caption: Guides
+:caption: Adapter Guides
 
-README
 airtable
 excel
 ```
