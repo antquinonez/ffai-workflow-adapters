@@ -31,8 +31,15 @@ dependencies = [
 airtable = [
     "pyairtable>=3.0.0",
 ]
+csv = []
+google_sheets = [
+    "gspread>=6.0.0",
+]
 excel = [
     "openpyxl>=3.1.0",
+]
+ods = [
+    "odfpy>=1.4.0",
 ]
 docs = [
     "sphinx>=7.0",
@@ -44,10 +51,14 @@ dev = [
     "pyright",
     "ruff",
     "ffai-workflow-adapters[docs]",
+    "odfpy>=1.4.0",
 ]
 all = [
     "ffai-workflow-adapters[airtable]",
+    "ffai-workflow-adapters[csv]",
     "ffai-workflow-adapters[excel]",
+    "ffai-workflow-adapters[google_sheets]",
+    "ffai-workflow-adapters[ods]",
 ]
 
 [tool.pytest.ini_options]
@@ -58,7 +69,10 @@ addopts = "-v --tb=short -m 'not integration'"
 markers = [
     "integration: integration tests that call real APIs and execute real workflows",
     "airtable: integration tests that require AIRTABLE_API_KEY and AIRTABLE_BASE_ID",
+    "csv: tests for the CSV/TSV adapter",
     "excel: integration tests that create real Excel files and execute real workflows",
+    "google_sheets: tests for the Google Sheets adapter",
+    "ods: tests for the ODS adapter",
 ]
 
 [tool.setuptools.packages.find]

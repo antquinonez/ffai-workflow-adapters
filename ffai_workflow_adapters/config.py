@@ -181,6 +181,18 @@ class AirtableAdapterConfig(_FieldMappedAdapterConfig):
     default_view: str = ""
 
 
+class OdsAdapterConfig(_FieldMappedAdapterConfig):
+    """ODS adapter settings."""
+    output_path: str | None = None
+    output_sheet: str = "Results"
+
+
+class CsvAdapterConfig(_FieldMappedAdapterConfig):
+    """CSV/TSV adapter settings."""
+    output_path: str | None = None
+    delimiter: str = ","
+
+
 class ExcelAdapterConfig(_FieldMappedAdapterConfig):
     """Excel adapter settings including output path and sheet name.
 
@@ -192,9 +204,10 @@ class ExcelAdapterConfig(_FieldMappedAdapterConfig):
     output_sheet: str = "Results"
 
 
-class GoogleSheetsAdapterConfig(BaseSettings):
-    """Google Sheets adapter stub (not yet implemented)."""
-    api_key_env: str = "GOOGLE_SHEETS_API_KEY"
+class GoogleSheetsAdapterConfig(_FieldMappedAdapterConfig):
+    """Google Sheets adapter settings including credentials and worksheet."""
+    credentials_env: str = "GOOGLE_SHEETS_CREDENTIALS"
+    output_worksheet: str = "Results"
 
 
 class AdaptersConfig(BaseSettings):
@@ -202,8 +215,10 @@ class AdaptersConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="allow")
 
     airtable: AirtableAdapterConfig = Field(default_factory=AirtableAdapterConfig)
+    csv_adapter: CsvAdapterConfig = Field(default_factory=CsvAdapterConfig)
     excel: ExcelAdapterConfig = Field(default_factory=ExcelAdapterConfig)
     google_sheets: GoogleSheetsAdapterConfig = Field(default_factory=GoogleSheetsAdapterConfig)
+    ods: OdsAdapterConfig = Field(default_factory=OdsAdapterConfig)
 
 
 class ClientTypeConfig(BaseSettings):

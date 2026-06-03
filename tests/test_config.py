@@ -98,7 +98,7 @@ class TestAdaptersConfig:
         data = _load_all_configs()
         cfg = AdaptersConfig(**data["adapters"])
         assert cfg.airtable.api_key_env == "AIRTABLE_API_KEY"
-        assert cfg.google_sheets.api_key_env == "GOOGLE_SHEETS_API_KEY"
+        assert cfg.google_sheets.credentials_env == "GOOGLE_SHEETS_CREDENTIALS"
 
 
 class TestClientsConfig:

@@ -40,6 +40,34 @@ adapters:
           step: Task
           response: Output
           model: "AI Model"
+  csv_adapter:
+    output_path: "output/results.csv"
+    delimiter: ","
+    passthrough_columns:
+      - Comments
+      - Priority
+      - Category
+    extra_output_columns:
+      run_id: "{{run_id}}"
+      run_date: "{{date}}"
+    input_field_map:
+      Name: name
+      Prompt: prompt
+      Model: client
+      History: history
+      Temperature: temperature
+      Max Tokens: max_tokens
+    output_field_map:
+      workflow: Workflow
+      step: Step
+      status: Status
+      response: Response
+      model: Model
+      input_tokens: Input Tokens
+      output_tokens: Output Tokens
+      cost_usd: Cost
+      duration_ms: Duration ms
+      timestamp: Timestamp
   excel:
     output_path: "output/results.xlsx"
     output_sheet: "Results"
@@ -84,4 +112,58 @@ adapters:
           response: Output
           model: "AI Model"
   google_sheets:
-    api_key_env: GOOGLE_SHEETS_API_KEY
+    credentials_env: GOOGLE_SHEETS_CREDENTIALS
+    output_worksheet: Results
+    passthrough_columns:
+      - Comments
+      - Priority
+      - Category
+    extra_output_columns:
+      run_id: "{{run_id}}"
+      run_date: "{{date}}"
+    input_field_map:
+      Name: name
+      Prompt: prompt
+      Model: client
+      History: history
+      Temperature: temperature
+      Max Tokens: max_tokens
+    output_field_map:
+      workflow: Workflow
+      step: Step
+      status: Status
+      response: Response
+      model: Model
+      input_tokens: Input Tokens
+      output_tokens: Output Tokens
+      cost_usd: Cost
+      duration_ms: Duration ms
+      timestamp: Timestamp
+  ods:
+    output_path: "output/results.ods"
+    output_sheet: "Results"
+    passthrough_columns:
+      - Comments
+      - Priority
+      - Category
+    extra_output_columns:
+      run_id: "{{run_id}}"
+      run_date: "{{date}}"
+    input_field_map:
+      Name: name
+      Prompt: prompt
+      Model: client
+      History: history
+      Temperature: temperature
+      Max Tokens: max_tokens
+    output_field_map:
+      workflow: Workflow
+      step: Step
+      status: Status
+      response: Response
+      model: Model
+      input_tokens: Input Tokens
+      output_tokens: Output Tokens
+      cost_usd: Cost
+      duration_ms: Duration ms
+      timestamp: Timestamp
