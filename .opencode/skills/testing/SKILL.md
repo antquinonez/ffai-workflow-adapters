@@ -236,6 +236,63 @@ Integration tests live in `tests/integration/` and are marked with `@pytest.mark
 
 Integration tests should assert structural properties (status, field existence, non-empty responses) rather than exact LLM output content, since responses are non-deterministic.
 
+## Testing Observability / Spans
+
+When testing code that emits OpenTelemetry spans via `_spans.adapter_span()`, use the `SpanRecorder` spy. It captures span names, attributes, and exceptions without requiring OTEL packages.
+
+### SpanRecorder basics
+
+```python
+from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+recorder = SpanRecorder()
+with adapter_span("airtable.load", _recorder=recorder, base_id="app") as span:
+    span.set_attribute("records.count", 5)
+
+assert recorder.spans[0].name == "ffai.adapters.airtable.load"
+assert recorder.spans[0].attributes["base_id"] == "app"
+assert recorder.spans[0].attributes["records.count"] == 5
+```
+
+### ContextVar propagation for nested spans
+
+`adapter_span` uses a `ContextVar` internally. When you pass `_recorder` to an outer span, all **nested** `adapter_span()` calls within that context automatically route to the same recorder — even if the inner code is production code that doesn't accept `_recorder` as a parameter.
+
+This is critical for integration-style tests where a public function (e.g., `load_workflow_airtable`) calls internal functions (e.g., `ResilientCaller.call()`) that also emit spans:
+
+```python
+recorder = SpanRecorder()
+with adapter_span("test_parent", _recorder=recorder):
+    # load_workflow_airtable() internally calls ResilientCaller.call()
+    # which calls adapter_span("resilience.call") — no _recorder param
+    # But the ContextVar propagates, so the span IS captured
+    load_workflow_airtable("appBase", "Steps", api_key="key")
+
+# Both spans are captured:
+load_spans = [s for s in recorder.spans if "airtable.load" in s.name]
+call_spans = [s for s in recorder.spans if "resilience.call" in s.name]
+assert len(load_spans) == 1
+assert len(call_spans) == 1
+```
+
+### Asserting exception recording
+
+When an exception propagates through a `SpanRecorder` span, it is recorded automatically:
+
+```python
+recorder = SpanRecorder()
+with pytest.raises(ValueError):
+    with adapter_span("test", _recorder=recorder):
+        raise ValueError("boom")
+
+assert len(recorder.spans[0].exceptions) == 1
+assert isinstance(recorder.spans[0].exceptions[0], ValueError)
+```
+
+### Production path (no OTEL)
+
+When `adapter_span` is called without `_recorder` and OTEL is disabled, it yields a `NoOpSpan`. Tests that don't need to inspect spans can simply call production code — spans are no-ops with zero overhead. Only use `SpanRecorder` when you need to assert span attributes.
+
 ## Known Anti-Patterns in the Current Suite
 
 When enhancing tests, watch for these patterns that already exist:

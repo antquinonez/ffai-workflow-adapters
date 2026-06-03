@@ -112,6 +112,14 @@ and ALL referenced source files. Check for:
 7. **`__init__.py` changes** -- are new modules properly exported?
 8. **Undefined references** -- are all function/class names used in code
    snippets actually defined somewhere?
+9. **Test infrastructure propagation** -- if a layer introduces test-only
+   mechanisms (recorders, spies, fixtures, ContextVars), verify that
+   downstream layers can access them through nested call chains without
+   adding test parameters to production APIs. If `L1.adapter_span()`
+   accepts `_recorder` but `L3.ResilientCaller.call()` also calls
+   `adapter_span()` internally, the recorder must propagate via context
+   (e.g., `ContextVar`), not via parameter threading. Check every layer
+   that calls a lower layer's instrumented functions.
 
 ### Issue severity levels
 
