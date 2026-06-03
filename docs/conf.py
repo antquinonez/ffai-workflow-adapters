@@ -20,7 +20,7 @@ source_suffix = {
     ".rst": "restructuredtext",
 }
 
-html_theme = "sphinx_book_theme"
+html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
 autoclass_content = "class"

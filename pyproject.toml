@@ -37,7 +37,7 @@ excel = [
 docs = [
     "sphinx>=7.0",
     "myst-parser>=3.0",
-    "sphinx-book-theme>=1.0",
+    "sphinx-rtd-theme>=3.0",
 ]
 dev = [
     "pytest",
