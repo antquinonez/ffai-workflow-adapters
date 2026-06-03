@@ -908,3 +908,110 @@ class TestResilience:
             write_workflow_results("appBase", "Out", big_result, api_key="key")
 
         assert call_count <= 3
+
+
+class TestAirtableSpans:
+    """Integration tests verifying L4 (airtable) spans work with L1+L3."""
+
+    def setup_method(self):
+        from ffai_workflow_adapters.config import reload_config
+        cfg = reload_config()
+        self._saved_input_map = cfg.adapters.airtable.input_field_map
+        self._saved_output_map = cfg.adapters.airtable.output_field_map
+        self._saved_pt = list(cfg.adapters.airtable.passthrough_columns)
+        self._saved_extra = dict(cfg.adapters.airtable.extra_output_columns)
+        cfg.adapters.airtable.input_field_map = {}
+        cfg.adapters.airtable.output_field_map = {}
+        cfg.adapters.airtable.passthrough_columns = []
+        cfg.adapters.airtable.extra_output_columns = {}
+
+    def teardown_method(self):
+        from ffai_workflow_adapters.config import get_config
+        cfg = get_config()
+        cfg.adapters.airtable.input_field_map = self._saved_input_map
+        cfg.adapters.airtable.output_field_map = self._saved_output_map
+        cfg.adapters.airtable.passthrough_columns = self._saved_pt
+        cfg.adapters.airtable.extra_output_columns = self._saved_extra
+        _reset_caller()
+
+    @patch("ffai_workflow_adapters.airtable._make_caller")
+    @patch("pyairtable.api.Api")
+    def test_load_emits_span(self, mock_api_cls, mock_make_caller):
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        mock_table = MagicMock()
+        mock_table.all.return_value = [
+            {"fields": {"name": "topic", "prompt": "hello"}},
+        ]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        mock_caller = MagicMock()
+        mock_caller.call.side_effect = lambda fn, **kw: fn(**kw)
+        mock_make_caller.return_value = mock_caller
+
+        recorder = SpanRecorder()
+        with adapter_span("test_parent", _recorder=recorder):
+            load_workflow_airtable("appBase", "Steps", api_key="key")
+
+        load_spans = [s for s in recorder.spans if s.name == "ffai.adapters.airtable.load"]
+        assert len(load_spans) == 1
+        span = load_spans[0]
+        assert span.attributes["adapter"] == "default"
+        assert span.attributes["base_id"] == "appBase"
+        assert span.attributes["table"] == "Steps"
+        assert span.attributes["records.raw_count"] == 1
+        assert span.attributes["rows.count"] == 1
+        assert span.attributes["workflow.name"] == "unnamed"
+
+    @patch("ffai_workflow_adapters.airtable._make_caller")
+    @patch("pyairtable.api.Api")
+    def test_write_emits_span(self, mock_api_cls, mock_make_caller):
+        from dataclasses import dataclass, field
+
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        @dataclass
+        class FakeUsage:
+            input_tokens: int = 10
+            output_tokens: int = 20
+
+        @dataclass
+        class FakeResult:
+            response: str = "ok"
+            model: str = "m"
+            status: str = "success"
+            usage: Any = field(default_factory=FakeUsage)
+            cost_usd: float = 0.001
+            duration_ms: float = 100.0
+
+        @dataclass
+        class FakeWorkflowResult:
+            results: dict = field(default_factory=dict)
+            spec_name: str = "test_workflow"
+
+        mock_table = MagicMock()
+        mock_table.batch_create.return_value = [{"id": "rec1"}]
+        mock_api_cls.return_value.table.return_value = mock_table
+
+        mock_caller = MagicMock()
+        mock_caller.call.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
+        mock_make_caller.return_value = mock_caller
+
+        result = FakeWorkflowResult(
+            results={"step1": FakeResult()},
+        )
+
+        recorder = SpanRecorder()
+        with adapter_span("test_parent", _recorder=recorder):
+            write_workflow_results("appBase", "_results", result, api_key="key")
+
+        write_spans = [s for s in recorder.spans if s.name == "ffai.adapters.airtable.write"]
+        assert len(write_spans) == 1
+        span = write_spans[0]
+        assert span.attributes["adapter"] == "default"
+        assert span.attributes["base_id"] == "appBase"
+        assert span.attributes["table"] == "_results"
+        assert span.attributes["records.count"] == 1
+        assert span.attributes["records.created"] == 1
+        assert "batch.chunk_size" in span.attributes
+        assert "batch.max_concurrency" in span.attributes
