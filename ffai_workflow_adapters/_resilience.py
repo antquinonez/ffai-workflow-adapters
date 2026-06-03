@@ -10,6 +10,8 @@ from typing import Any, Callable
 
 from ffai.workflow.tabular import TabularLoadError
 
+from ffai_workflow_adapters._spans import adapter_span
+
 logger = logging.getLogger(__name__)
 
 
@@ -123,6 +125,9 @@ class CircuitBreaker:
                 return True
             if self._state == CircuitState.OPEN:
                 if time.monotonic() - self._opened_at >= self._recovery_timeout:
+                    logger.info(
+                        "Circuit breaker: OPEN -> HALF_OPEN (recovery timeout elapsed)"
+                    )
                     self._state = CircuitState.HALF_OPEN
                     self._half_open_calls = 1
                     return True
@@ -131,6 +136,10 @@ class CircuitBreaker:
                 if self._half_open_calls < self._half_open_max_calls:
                     self._half_open_calls += 1
                     return True
+                logger.info(
+                    "Circuit breaker: HALF_OPEN rejected (max probe calls=%d reached)",
+                    self._half_open_max_calls,
+                )
                 return False
         assert False
 
@@ -138,6 +147,9 @@ class CircuitBreaker:
         """Record a successful call, closing the breaker if half-open."""
         with self._lock:
             if self._state == CircuitState.HALF_OPEN:
+                logger.info(
+                    "Circuit breaker: HALF_OPEN -> CLOSED (probe succeeded)"
+                )
                 self._state = CircuitState.CLOSED
             self._failures = 0
 
@@ -146,9 +158,18 @@ class CircuitBreaker:
         with self._lock:
             self._failures += 1
             if self._state == CircuitState.HALF_OPEN:
+                logger.info(
+                    "Circuit breaker: HALF_OPEN -> OPEN (probe failed, failures=%d)",
+                    self._failures,
+                )
                 self._state = CircuitState.OPEN
                 self._opened_at = time.monotonic()
             elif self._failures >= self._failure_threshold:
+                logger.info(
+                    "Circuit breaker: CLOSED -> OPEN (failures=%d, threshold=%d)",
+                    self._failures,
+                    self._failure_threshold,
+                )
                 self._state = CircuitState.OPEN
                 self._opened_at = time.monotonic()
 
@@ -275,17 +296,23 @@ class ResilientCaller:
             TabularLoadError: If the circuit breaker is open or rate
                 limit acquire times out.
         """
-        if not self._breaker.allow():
-            raise TabularLoadError("Circuit breaker is open")
-        self._bucket.acquire(timeout=self._acquire_timeout)
+        with adapter_span("resilience.call") as span:
+            if not self._breaker.allow():
+                span.set_attribute("circuit_breaker.state", "open")
+                span.set_attribute("circuit_breaker.rejected", True)
+                raise TabularLoadError("Circuit breaker is open")
+            self._bucket.acquire(timeout=self._acquire_timeout)
 
-        try:
-            result = self._retry(fn, *args, **kwargs)
-        except Exception:
-            self._breaker.record_failure()
-            raise
-        self._breaker.record_success()
-        return result
+            try:
+                result = self._retry(fn, *args, **kwargs)
+                span.set_attribute("call.success", True)
+            except Exception:
+                self._breaker.record_failure()
+                span.set_attribute("call.success", False)
+                span.set_attribute("circuit_breaker.failures", self._breaker.failures)
+                raise
+            self._breaker.record_success()
+            return result
 
     def _retry(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         last_exc: Exception = TabularLoadError("no attempts made")
@@ -315,6 +342,11 @@ class ResilientCaller:
                     e,
                     wait,
                 )
+                with adapter_span("resilience.retry") as retry_span:
+                    retry_span.set_attribute("attempt", attempt)
+                    retry_span.set_attribute("max_attempts", self._retry_max_attempts)
+                    retry_span.set_attribute("wait_seconds", round(wait, 2))
+                    retry_span.record_exception(e)
                 time.sleep(wait)
         raise last_exc
 
