@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -684,3 +685,67 @@ class TestWriteWorkflowResultsExcel:
         with patch.dict("sys.modules", {"openpyxl": None}):
             with pytest.raises(TabularLoadError, match="openpyxl is required"):
                 write_workflow_results_excel(result, path=filepath)
+
+
+class TestExcelSpans:
+    """Integration tests verifying L5 (excel) spans work with L1."""
+
+    def test_load_emits_span(self, tmp_path: Path):
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        filepath = tmp_path / "workflow.xlsx"
+        _create_xlsx(filepath, ["name", "prompt"], [["topic", "hello"]])
+
+        recorder = SpanRecorder()
+        with adapter_span("test_parent", _recorder=recorder):
+            spec = load_workflow_excel(filepath, name="excel_test")
+
+        load_spans = [s for s in recorder.spans if s.name == "ffai.adapters.excel.load"]
+        assert len(load_spans) == 1
+        span = load_spans[0]
+        assert span.attributes["adapter"] == "default"
+        assert str(filepath) in span.attributes["path"]
+        assert span.attributes["sheet"] == "active"
+        assert span.attributes["columns.count"] == 2
+        assert span.attributes["rows.count"] == 1
+        assert span.attributes["workflow.name"] == "excel_test"
+        assert spec.name == "excel_test"
+
+    def test_write_emits_span(self, tmp_path: Path):
+        from dataclasses import dataclass, field
+
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        @dataclass
+        class FakeUsage:
+            input_tokens: int = 10
+            output_tokens: int = 20
+
+        @dataclass
+        class FakeStepResult:
+            response: str = "ok"
+            model: str = "m"
+            status: str = "success"
+            usage: Any = field(default_factory=FakeUsage)
+            cost_usd: float = 0.001
+            duration_ms: float = 100.0
+
+        @dataclass
+        class FakeWorkflowResult:
+            results: dict = field(default_factory=lambda: {"step1": FakeStepResult()})
+            spec_name: str = "test_wf"
+
+        filepath = tmp_path / "results.xlsx"
+        result = FakeWorkflowResult()
+
+        recorder = SpanRecorder()
+        with adapter_span("test_parent", _recorder=recorder):
+            out = write_workflow_results_excel(result, path=filepath)
+
+        write_spans = [s for s in recorder.spans if s.name == "ffai.adapters.excel.write"]
+        assert len(write_spans) == 1
+        span = write_spans[0]
+        assert span.attributes["adapter"] == "default"
+        assert str(filepath) in span.attributes["path"]
+        assert span.attributes["sheet"] == "Results"
+        assert span.attributes["records.count"] == 1

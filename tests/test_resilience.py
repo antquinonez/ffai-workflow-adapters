@@ -337,3 +337,155 @@ class TestBatched:
 
         chunks = list(batched([1, 2], 10))
         assert chunks == [[1, 2]]
+
+
+class TestResilienceSpans:
+    """Integration tests verifying L3 (resilience) spans work with L1 (_spans)."""
+
+    def test_call_emits_success_span(self) -> None:
+        from ffai_workflow_adapters._resilience import CircuitBreaker, ResilientCaller, TokenBucket
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        recorder = SpanRecorder()
+        caller = ResilientCaller(
+            bucket=TokenBucket(rate=100.0, burst=100),
+            breaker=CircuitBreaker(failure_threshold=5),
+            retry_max_attempts=1,
+            acquire_timeout=5.0,
+        )
+
+        with adapter_span("test_parent", _recorder=recorder):
+            caller.call(MagicMock(return_value="ok"))
+
+        call_spans = [s for s in recorder.spans if s.name == "ffai.adapters.resilience.call"]
+        assert len(call_spans) == 1
+        assert call_spans[0].attributes["call.success"] is True
+
+    def test_call_emits_failure_span_on_exception(self) -> None:
+        from ffai_workflow_adapters._resilience import CircuitBreaker, ResilientCaller, TokenBucket
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        recorder = SpanRecorder()
+        breaker = CircuitBreaker(failure_threshold=5)
+        caller = ResilientCaller(
+            bucket=TokenBucket(rate=100.0, burst=100),
+            breaker=breaker,
+            retry_max_attempts=1,
+            acquire_timeout=5.0,
+        )
+
+        with pytest.raises(RuntimeError):
+            with adapter_span("test_parent", _recorder=recorder):
+                caller.call(MagicMock(side_effect=RuntimeError("boom")))
+
+        call_spans = [s for s in recorder.spans if s.name == "ffai.adapters.resilience.call"]
+        assert len(call_spans) == 1
+        assert call_spans[0].attributes["call.success"] is False
+        assert call_spans[0].attributes["circuit_breaker.failures"] == 1
+
+    def test_circuit_breaker_rejection_emits_span(self) -> None:
+        from ffai_workflow_adapters._resilience import CircuitBreaker, CircuitState, ResilientCaller, TokenBucket
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        recorder = SpanRecorder()
+        breaker = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=300.0)
+        breaker.record_failure()
+        assert breaker.state == CircuitState.OPEN
+
+        caller = ResilientCaller(
+            bucket=TokenBucket(rate=100.0, burst=100),
+            breaker=breaker,
+            retry_max_attempts=1,
+            acquire_timeout=5.0,
+        )
+
+        with pytest.raises(TabularLoadError, match="Circuit breaker is open"):
+            with adapter_span("test_parent", _recorder=recorder):
+                caller.call(MagicMock(return_value="ok"))
+
+        call_spans = [s for s in recorder.spans if s.name == "ffai.adapters.resilience.call"]
+        assert len(call_spans) == 1
+        assert call_spans[0].attributes["circuit_breaker.state"] == "open"
+        assert call_spans[0].attributes["circuit_breaker.rejected"] is True
+
+    def test_retry_emits_retry_spans(self) -> None:
+        from ffai_workflow_adapters._resilience import CircuitBreaker, ResilientCaller, TokenBucket
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        recorder = SpanRecorder()
+        caller = ResilientCaller(
+            bucket=TokenBucket(rate=100.0, burst=100),
+            breaker=CircuitBreaker(failure_threshold=5),
+            retry_max_attempts=3,
+            retry_min_wait=0.01,
+            retry_max_wait=0.01,
+            retry_jitter=False,
+            acquire_timeout=5.0,
+        )
+
+        error = Exception("retryable")
+        error.response = MagicMock()
+        error.response.status_code = 429
+
+        with pytest.raises(Exception, match="retryable"):
+            with adapter_span("test_parent", _recorder=recorder):
+                caller.call(MagicMock(side_effect=error))
+
+        retry_spans = [s for s in recorder.spans if s.name == "ffai.adapters.resilience.retry"]
+        assert len(retry_spans) == 2
+        assert retry_spans[0].attributes["attempt"] == 1
+        assert retry_spans[0].attributes["max_attempts"] == 3
+        assert retry_spans[1].attributes["attempt"] == 2
+        assert len(retry_spans[0].exceptions) == 1
+
+    def test_non_retryable_error_emits_no_retry_span(self) -> None:
+        from ffai_workflow_adapters._resilience import CircuitBreaker, ResilientCaller, TokenBucket
+        from ffai_workflow_adapters._spans import SpanRecorder, adapter_span
+
+        recorder = SpanRecorder()
+        caller = ResilientCaller(
+            bucket=TokenBucket(rate=100.0, burst=100),
+            breaker=CircuitBreaker(failure_threshold=5),
+            retry_max_attempts=3,
+            retry_min_wait=0.01,
+            retry_max_wait=0.01,
+            acquire_timeout=5.0,
+        )
+
+        error = Exception("bad request")
+        error.response = MagicMock()
+        error.response.status_code = 400
+
+        with pytest.raises(Exception, match="bad request"):
+            with adapter_span("test_parent", _recorder=recorder):
+                caller.call(MagicMock(side_effect=error))
+
+        retry_spans = [s for s in recorder.spans if s.name == "ffai.adapters.resilience.retry"]
+        assert len(retry_spans) == 0
+
+    def test_circuit_breaker_transitions_logged(self, caplog) -> None:
+        import logging
+        from ffai_workflow_adapters._resilience import CircuitBreaker
+
+        breaker = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=0.05)
+
+        with caplog.at_level(logging.INFO, logger="ffai_workflow_adapters._resilience"):
+            breaker.record_failure()
+            breaker.record_failure()
+
+        assert any("CLOSED -> OPEN" in r.message for r in caplog.records)
+
+        caplog.clear()
+        time.sleep(0.1)
+
+        with caplog.at_level(logging.INFO, logger="ffai_workflow_adapters._resilience"):
+            breaker.allow()
+
+        assert any("OPEN -> HALF_OPEN" in r.message for r in caplog.records)
+
+        caplog.clear()
+
+        with caplog.at_level(logging.INFO, logger="ffai_workflow_adapters._resilience"):
+            breaker.record_success()
+
+        assert any("HALF_OPEN -> CLOSED" in r.message for r in caplog.records)

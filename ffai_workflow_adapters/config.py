@@ -181,6 +181,18 @@ class AirtableAdapterConfig(_FieldMappedAdapterConfig):
     default_view: str = ""
 
 
+class OdsAdapterConfig(_FieldMappedAdapterConfig):
+    """ODS adapter settings."""
+    output_path: str | None = None
+    output_sheet: str = "Results"
+
+
+class CsvAdapterConfig(_FieldMappedAdapterConfig):
+    """CSV/TSV adapter settings."""
+    output_path: str | None = None
+    delimiter: str = ","
+
+
 class ExcelAdapterConfig(_FieldMappedAdapterConfig):
     """Excel adapter settings including output path and sheet name.
 
@@ -192,9 +204,27 @@ class ExcelAdapterConfig(_FieldMappedAdapterConfig):
     output_sheet: str = "Results"
 
 
-class GoogleSheetsAdapterConfig(BaseSettings):
-    """Google Sheets adapter stub (not yet implemented)."""
+class GoogleSheetsAdapterConfig(_FieldMappedAdapterConfig):
+    """Google Sheets adapter settings including credentials and worksheet.
+
+    Attributes:
+        auth_method: Authentication method — ``"service_account"`` (default),
+            ``"oauth"``, or ``"api_key"``.
+        credentials_env: Environment variable holding the path to the service
+            account JSON file (for ``service_account`` auth) or the path to
+            the OAuth credentials JSON file (for ``oauth`` auth).
+        authorized_user_env: Environment variable holding the path to the
+            authorized user JSON file (for ``oauth`` auth). Optional — gspread
+            stores authorized credentials after the first browser login.
+        api_key_env: Environment variable holding the API key string (for
+            ``api_key`` auth). Only works with public spreadsheets.
+        output_worksheet: Default worksheet name for write results.
+    """
+    auth_method: Literal["service_account", "oauth", "api_key"] = "service_account"
+    credentials_env: str = "GOOGLE_SHEETS_CREDENTIALS"
+    authorized_user_env: str = "GOOGLE_SHEETS_AUTHORIZED_USER"
     api_key_env: str = "GOOGLE_SHEETS_API_KEY"
+    output_worksheet: str = "Results"
 
 
 class AdaptersConfig(BaseSettings):
@@ -202,8 +232,10 @@ class AdaptersConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="allow")
 
     airtable: AirtableAdapterConfig = Field(default_factory=AirtableAdapterConfig)
+    csv_adapter: CsvAdapterConfig = Field(default_factory=CsvAdapterConfig)
     excel: ExcelAdapterConfig = Field(default_factory=ExcelAdapterConfig)
     google_sheets: GoogleSheetsAdapterConfig = Field(default_factory=GoogleSheetsAdapterConfig)
+    ods: OdsAdapterConfig = Field(default_factory=OdsAdapterConfig)
 
 
 class ClientTypeConfig(BaseSettings):

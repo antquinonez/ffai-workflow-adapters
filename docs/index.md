@@ -9,7 +9,10 @@ See the [project README](https://github.com/anomalyco/ffai-workflow-adapters#rea
 :caption: Adapter Guides
 
 airtable
+csv
 excel
+google-sheets
+ods
 ```
 
 ```{toctree}

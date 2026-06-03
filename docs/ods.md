@@ -1,29 +1,31 @@
-# Excel Adapter
+# ODS Adapter
 
-Load and execute ffai workflows from Excel (.xlsx) files, with write-back of results.
+Load and execute ffai workflows from OpenDocument Spreadsheet (.ods) files, with write-back of results.
 
 ## Setup
 
-### 1. Install with Excel support
+### 1. Install with ODS support
 
 ```bash
-pip install ffai-workflow-adapters[excel]
+pip install ffai-workflow-adapters[ods]
 ```
+
+This installs [odfpy](https://pypi.org/project/odfpy/), a pure-Python library for reading and writing ODS files.
 
 ### 2. No environment variables required
 
-Excel files are read from the local filesystem. No API keys needed.
+ODS files are read from the local filesystem. No API keys needed for the adapter itself (you still need LLM API keys for ffai).
 
 ## Loading Workflows
 
-### `load_workflow_excel(path, *, ...)`
+### `load_workflow_ods(path, *, ...)`
 
 ```python
-from ffai_workflow_adapters import load_workflow_excel
+from ffai_workflow_adapters import load_workflow_ods
 
-spec = load_workflow_excel(
-    "workflows/my_workflow.xlsx",
-    sheet="Steps",             # optional: sheet name or index (default: active sheet)
+spec = load_workflow_ods(
+    "workflows/my_workflow.ods",
+    sheet="Steps",             # optional: sheet name or index (default: first sheet)
     adapter="marketing",       # optional: named adapter from config
     name="my_workflow",
     defaults={"temperature": 0.5},
@@ -31,9 +33,9 @@ spec = load_workflow_excel(
 )
 ```
 
-### Excel File Format
+### ODS File Format
 
-The first row must be a header with column names. Each subsequent row is a workflow step.
+The first row of the selected sheet must be a header with column names. Each subsequent row is a workflow step.
 
 #### Required Columns
 
@@ -57,36 +59,55 @@ The first row must be a header with column names. Each subsequent row is a workf
 
 See [Airtable adapter docs](airtable.md#column-name-aliases) for the full list of column name aliases.
 
-### Example Excel Workflow
+### Example ODS Workflow
 
 | name | prompt | client | history | temperature |
 |------|--------|--------|---------|-------------|
 | `topic` | `Name a famous scientific discovery.` | `litellm-mistral-small` | | `0.7` |
 | `explain` | `Explain its impact: {{topic.response}}` | `litellm-gpt-4o-mini` | `topic` | `0.5` |
 
-## Writing Results
+### Sheet Selection
 
-### `write_workflow_results_excel(result, path=None, *, sheet=None, adapter=None, spec=None)`
+The `sheet` parameter accepts a sheet name (string) or index (integer):
 
 ```python
-from ffai_workflow_adapters import write_workflow_results_excel
+# By name
+spec = load_workflow_ods("workflows/steps.ods", sheet="Workflow")
+
+# By index (0-based)
+spec = load_workflow_ods("workflows/steps.ods", sheet=1)
+
+# Default: first sheet
+spec = load_workflow_ods("workflows/steps.ods")
+```
+
+Raises `TabularLoadError` if the named sheet doesn't exist.
+
+## Writing Results
+
+### `write_workflow_results_ods(result, path=None, *, ...)`
+
+```python
+from ffai_workflow_adapters import write_workflow_results_ods
 
 result = await ffai.execute_workflow(spec)
 
 # Write using config defaults (output_path, output_sheet from adapters.yaml)
-write_workflow_results_excel(result)
+write_workflow_results_ods(result)
 
 # Override path and/or sheet
-write_workflow_results_excel(result, path="output/run2.xlsx")
-write_workflow_results_excel(result, sheet="Run 2")
+write_workflow_results_ods(result, path="output/run2.ods")
+write_workflow_results_ods(result, sheet="Run 2")
 
-# With passthrough columns — pass the spec returned by load_workflow_excel
-write_workflow_results_excel(result, spec=spec)
+# With passthrough columns — pass the spec returned by load_workflow_ods
+write_workflow_results_ods(result, spec=spec)
 ```
 
-`path` and `sheet` are optional — if omitted, they fall back to `output_path` and `output_sheet` from the resolved adapter config. Raises `ValueError` if neither is set.
+`path` and `sheet` are optional — if omitted, they fall back to `output_path` and `output_sheet` from the resolved adapter config. Raises `ValueError` if no output path is set.
 
-If the file exists, results are appended to the sheet. If the sheet exists, rows are appended after existing data. Parent directories are created automatically.
+**Note:** ODS write always creates a new file. Unlike CSV (which appends), calling `write_workflow_results_ods` overwrites any existing file at the path. This is a limitation of the ODS format — appending rows to an existing ODS document while preserving formatting is complex.
+
+Parent directories are created automatically.
 
 #### Output Columns
 
@@ -107,11 +128,11 @@ Column names are remapped via `output_field_map` if configured.
 
 ## Field Mapping
 
-Same system as the Airtable adapter. Configure in `config/adapters.yaml`:
+Same system as other adapters. Configure in `config/adapters.yaml`:
 
 ```yaml
 adapters:
-  excel:
+  ods:
     input_field_map:
       Task: name
       Instructions: prompt
@@ -119,11 +140,6 @@ adapters:
     output_field_map:
       step: Task
       response: Output
-    named:
-      quarterly:
-        input_field_map:
-          Step: name
-          Query: prompt
 ```
 
 See [Airtable adapter - Field Mapping](airtable.md#field-mapping) for full details on mapping and inheritance rules.
@@ -134,7 +150,7 @@ Carry extra source columns (Comments, Priority, etc.) into the output. Configure
 
 ```yaml
 adapters:
-  excel:
+  ods:
     passthrough_columns:
       - Comments
       - Priority
@@ -144,9 +160,9 @@ adapters:
 At load time, values are captured from the source workbook and stored as metadata on the spec. At write time, pass the spec to include them:
 
 ```python
-spec = load_workflow_excel("workflows/steps.xlsx")
+spec = load_workflow_ods("workflows/steps.ods")
 result = await ffai.execute_workflow(spec)
-write_workflow_results_excel(result, spec=spec)
+write_workflow_results_ods(result, spec=spec)
 ```
 
 Passthrough columns appear in the output after the standard columns, with their original names (or remapped via `output_field_map` if configured). If a step has no value for a passthrough column, `None` is written.
@@ -159,7 +175,7 @@ Add derived columns to every output row. Configure in `config/adapters.yaml`:
 
 ```yaml
 adapters:
-  excel:
+  ods:
     extra_output_columns:
       run_id: "{{run_id}}"
       run_date: "{{date}}"
@@ -177,7 +193,7 @@ adapters:
 | `{{now:FORMAT}}` | `strftime` format (e.g., `{{now:%Y-%m-%d %H:%M}}` → `2026-06-02 17:40`) |
 | Any other string | Literal value |
 
-All templates resolve **once per write call** — every row in the same run gets the same `run_id`, `date`, etc. Pass `run_id="batch-42"` to `write_workflow_results_excel()` to use a custom ID instead of the auto-generated one.
+All templates resolve **once per write call** — every row in the same run gets the same `run_id`, `date`, etc. Pass `run_id="batch-42"` to `write_workflow_results_ods()` to use a custom ID instead of the auto-generated one.
 
 Extra columns appear in the output after passthrough columns. Named adapters inherit and can override.
 
@@ -217,7 +233,7 @@ Standard columns → passthrough columns → extra output columns.
 
 ## Observability
 
-Adapter operations emit OpenTelemetry spans when FFAI's observability is enabled. Spans cover Excel load and write operations, including file paths, record counts, timing, and error details.
+Adapter operations emit OpenTelemetry spans when FFAI's observability is enabled. Spans cover ODS load and write operations, including file paths, record counts, timing, and error details.
 
 ### Enabling
 
@@ -227,16 +243,16 @@ Same as Airtable adapter — see [Airtable adapter - Observability](airtable.md#
 
 | Span Name | Operation | Key Attributes |
 |-----------|-----------|----------------|
-| `ffai.adapters.excel.load` | Load workflow from file | `adapter`, `path`, `sheet`, `columns.count`, `rows.count`, `workflow.name` |
-| `ffai.adapters.excel.write` | Write results to file | `adapter`, `path`, `sheet`, `run_id`, `records.count` |
+| `ffai.adapters.ods.load` | Load workflow from file | `adapter`, `path`, `sheet`, `columns.count`, `rows.count`, `workflow.name` |
+| `ffai.adapters.ods.write` | Write results to file | `adapter`, `path`, `sheet`, `run_id`, `records.count` |
 
 ## Config Reference
 
 ```yaml
 adapters:
-  excel:
+  ods:
     # Output destination (used when path= is omitted)
-    output_path: "output/results.xlsx"
+    output_path: "output/results.ods"
     output_sheet: "Results"
 
     # Carry source columns to output
@@ -259,18 +275,6 @@ adapters:
     output_field_map:
       step: Step
       response: Response
-
-    # Named adapter overrides
-    named:
-      custom:
-        output_path: "output/results_custom.xlsx"
-        output_sheet: "Custom Results"
-        input_field_map:
-          Task: name
-          Instructions: prompt
-        output_field_map:
-          step: Task
-          response: Output
 ```
 
 ## Full Example
@@ -279,17 +283,17 @@ adapters:
 import asyncio
 from ffai import FFAI
 from ffai.Clients.AsyncFFLiteLLMClient import AsyncFFLiteLLMClient
-from ffai_workflow_adapters import load_workflow_excel, write_workflow_results_excel
+from ffai_workflow_adapters import load_workflow_ods, write_workflow_results_ods
 
 async def main():
     client = AsyncFFLiteLLMClient(model_string="mistral/mistral-small-latest", api_key="...")
     ffai = FFAI(client)
 
-    spec = load_workflow_excel("workflows/steps.xlsx", name="excel_workflow")
+    spec = load_workflow_ods("workflows/steps.ods", name="ods_workflow")
     result = await ffai.execute_workflow(spec)
 
-    # Writes to output/results.xlsx (from config) with passthrough + extra columns
-    write_workflow_results_excel(result, spec=spec)
+    # Writes to output/results.ods (from config) with passthrough + extra columns
+    write_workflow_results_ods(result, spec=spec)
 
 asyncio.run(main())
 ```

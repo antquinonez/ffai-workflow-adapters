@@ -14,4 +14,11 @@ build/
 _ideas/*
 designs/
 docs/_build/
-examples/excel/results_*.xlsx
+examples/excel/results_*
+ffai-*.json
+examples/**/_*.ipynb
+examples/**/*_results.csv
+examples/**/*_results.tsv
+examples/**/*_results.xlsx
+examples/**/*_results.ods
+issues/*
