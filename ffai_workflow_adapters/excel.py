@@ -243,7 +243,7 @@ def write_workflow_results_excel(
                 "workflow": result.spec_name or "",
                 "step": step_name,
                 "status": step_result.status,
-                "response": step_result.response or "",
+                "response": str(step_result.response) if step_result.response is not None else "",
                 "model": step_result.model or "",
                 "timestamp": timestamp,
             }
