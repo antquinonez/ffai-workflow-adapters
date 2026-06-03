@@ -66,7 +66,7 @@ See [Airtable adapter docs](airtable.md#column-name-aliases) for the full list o
 
 ## Writing Results
 
-### `write_workflow_results_excel(result, path=None, *, sheet=None, adapter=None, spec=None)`
+### `write_workflow_results_excel(result, path=None, *, ...)`
 
 ```python
 from ffai_workflow_adapters import write_workflow_results_excel
