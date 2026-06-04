@@ -13,6 +13,7 @@ csv
 excel
 google-sheets
 ods
+smartsheet
 ```
 
 ```{toctree}

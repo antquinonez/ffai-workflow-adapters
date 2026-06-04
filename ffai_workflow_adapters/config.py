@@ -227,6 +227,15 @@ class GoogleSheetsAdapterConfig(_FieldMappedAdapterConfig):
     output_worksheet: str = "Results"
 
 
+class SmartsheetAdapterConfig(_FieldMappedAdapterConfig):
+    """Smartsheet adapter settings including access token.
+
+    Attributes:
+        access_token_env: Environment variable name for the Smartsheet access token.
+    """
+    access_token_env: str = "SMARTSHEET_ACCESS_TOKEN"
+
+
 class AdaptersConfig(BaseSettings):
     """Per-adapter configuration grouped by adapter type."""
     model_config = SettingsConfigDict(extra="allow")
@@ -236,6 +245,7 @@ class AdaptersConfig(BaseSettings):
     excel: ExcelAdapterConfig = Field(default_factory=ExcelAdapterConfig)
     google_sheets: GoogleSheetsAdapterConfig = Field(default_factory=GoogleSheetsAdapterConfig)
     ods: OdsAdapterConfig = Field(default_factory=OdsAdapterConfig)
+    smartsheet: SmartsheetAdapterConfig = Field(default_factory=SmartsheetAdapterConfig)
 
 
 class ClientTypeConfig(BaseSettings):

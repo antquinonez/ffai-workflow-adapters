@@ -12,6 +12,7 @@ from .google_sheets import (
     write_workflow_results_google_sheets,
 )
 from .ods import load_workflow_ods, write_workflow_results_ods
+from .smartsheet import load_workflow_smartsheet, write_workflow_results_smartsheet
 
 __all__ = [
     "load_workflow_airtable",
@@ -26,6 +27,8 @@ __all__ = [
     "write_workflow_results_google_sheets",
     "load_workflow_ods",
     "write_workflow_results_ods",
+    "load_workflow_smartsheet",
+    "write_workflow_results_smartsheet",
     "get_config",
     "reload_config",
 ]

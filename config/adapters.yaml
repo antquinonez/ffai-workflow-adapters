@@ -142,6 +142,32 @@ adapters:
       cost_usd: Cost
       duration_ms: Duration ms
       timestamp: Timestamp
+  smartsheet:
+    passthrough_columns:
+      - Comments
+      - Priority
+      - Category
+    extra_output_columns:
+      run_id: "{{run_id}}"
+      run_date: "{{date}}"
+    input_field_map:
+      Name: name
+      Prompt: prompt
+      Model: client
+      History: history
+      Temperature: temperature
+      Max Tokens: max_tokens
+    output_field_map:
+      workflow: Workflow
+      step: Step
+      status: Status
+      response: Response
+      model: Model
+      input_tokens: Input Tokens
+      output_tokens: Output Tokens
+      cost_usd: Cost
+      duration_ms: Duration ms
+      timestamp: Timestamp
   ods:
     output_path: "output/results.ods"
     output_sheet: "Results"
