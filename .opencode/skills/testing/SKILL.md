@@ -229,12 +229,37 @@ class FakeWorkflowResult:
 
 Integration tests live in `tests/integration/` and are marked with `@pytest.mark.integration`. They:
 
-- Call real APIs (Airtable, LLM providers)
+- Call real APIs (Airtable, LLM providers) and read/write real files
 - Require credentials in `.env`
 - Are excluded from default `pytest` runs (see `pyproject.toml` markers)
 - Are included when running `pytest -m ''`
 
 Integration tests should assert structural properties (status, field existence, non-empty responses) rather than exact LLM output content, since responses are non-deterministic.
+
+### Adapter-specific integration patterns
+
+#### File adapters (CSV, TSV, Excel, ODS)
+
+Create input files using the same libraries the adapters use (`csv`, `openpyxl`, `odfpy`). Read output files back with the same libraries and assert on header names, column values, and row counts.
+
+#### Google Sheets
+
+**Delete output worksheets before write tests.** The adapter only writes a header row when creating a *new* worksheet. Clearing an existing worksheet leaves it in place, so `is_new_worksheet` is False and no header is appended. Tests that assert header row content must delete the worksheet first:
+
+```python
+def _delete_worksheet(ss_id: str, title: str) -> None:
+    gc = _get_gc()
+    ss = gc.open_by_key(ss_id)
+    existing = [w.title for w in ss.worksheets()]
+    if title in existing:
+        ss.del_worksheet(ss.worksheet(title))
+```
+
+**Use mapped column names in assertions.** The default `output_field_map` in `config/adapters.yaml` capitalizes column names (`workflow` → `Workflow`, `step` → `Step`). Integration tests reading output back must use the mapped names, not canonical names. Either:
+- Use the mapped name: `header.index("Step")` not `header.index("step")`
+- Or clear `output_field_map` in test setup to get canonical names
+
+**Auth requires env vars.** Google Sheets integration tests need `GOOGLE_SHEETS_CREDENTIALS` (or `GOOGLE_SHEETS_API_KEY`) and `GOOGLE_SHEETS_TEST_SPREADSHEET_ID`. Use `pytest.skip()` when env vars are missing.
 
 ## Testing Observability / Spans
 
