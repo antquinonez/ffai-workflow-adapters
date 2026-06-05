@@ -23,3 +23,4 @@ examples/**/*_results.xlsx
 examples/**/*_results.ods
 issues/*
 examples/airtable/ffai_data/*
+_untracked/*
