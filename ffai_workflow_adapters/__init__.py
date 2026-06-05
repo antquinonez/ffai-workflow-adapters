@@ -12,6 +12,7 @@ from .google_sheets import (
     write_workflow_results_google_sheets,
 )
 from .ods import load_workflow_ods, write_workflow_results_ods
+from .smartsheet import load_workflow_smartsheet, write_workflow_results_smartsheet
 
 from ._generate import litellm_generate_fn
 from ._airtable_attachments import AttachmentSync, sha256_of_text
@@ -30,6 +31,8 @@ __all__ = [
     "write_workflow_results_google_sheets",
     "load_workflow_ods",
     "write_workflow_results_ods",
+    "load_workflow_smartsheet",
+    "write_workflow_results_smartsheet",
     "get_config",
     "reload_config",
     "litellm_generate_fn",

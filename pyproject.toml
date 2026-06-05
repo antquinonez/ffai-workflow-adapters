@@ -41,6 +41,9 @@ excel = [
 ods = [
     "odfpy>=1.4.0",
 ]
+smartsheet = [
+    "smartsheet-python-sdk>=3.0.0",
+]
 docs = [
     "sphinx>=7.0",
     "myst-parser>=3.0",
@@ -59,6 +62,7 @@ all = [
     "ffai-workflow-adapters[excel]",
     "ffai-workflow-adapters[google_sheets]",
     "ffai-workflow-adapters[ods]",
+    "ffai-workflow-adapters[smartsheet]",
 ]
 
 [tool.pytest.ini_options]
@@ -73,6 +77,7 @@ markers = [
     "excel: integration tests that create real Excel files and execute real workflows",
     "google_sheets: tests for the Google Sheets adapter",
     "ods: tests for the ODS adapter",
+    "smartsheet: tests for the Smartsheet adapter",
 ]
 
 [tool.setuptools.packages.find]
