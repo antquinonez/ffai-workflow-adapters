@@ -483,8 +483,8 @@ class HaystackRAG:
 
         joined = joiner.run(
             documents=[
-                *bm25_result["documents"],
-                *emb_result["documents"],
+                bm25_result["documents"],
+                emb_result["documents"],
             ],
         )
 
