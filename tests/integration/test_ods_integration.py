@@ -123,7 +123,7 @@ class TestOdsIntegration:
         assert spec.prompts[1].history == ["topic"]
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         assert result.success_count == 2
         assert result.failed_count == 0
@@ -154,7 +154,7 @@ class TestOdsIntegration:
 
         spec = load_workflow_ods(workflow, sheet="Steps", name="ods_run_id")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         write_workflow_results_ods(result, path=results, run_id="ods-batch-7")
 
@@ -174,7 +174,7 @@ class TestOdsIntegration:
 
         spec = load_workflow_ods(workflow, name="ods_passthrough")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         write_workflow_results_ods(result, path=results, spec=spec)
 

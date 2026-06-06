@@ -22,7 +22,7 @@ classifiers = [
 keywords = ["ffai", "workflow", "airtable", "llm", "automation"]
 
 dependencies = [
-    "ffai>=0.1.4",
+    "ffai>=0.1.6",
     "pydantic-settings>=2.13.0",
     "pyyaml>=6.0",
 ]
@@ -54,6 +54,7 @@ dev = [
     "pytest",
     "pyright",
     "ruff",
+    "papermill>=2.6.0",
     "ffai-workflow-adapters[docs]",
     "odfpy>=1.4.0",
 ]

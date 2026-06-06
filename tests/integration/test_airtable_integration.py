@@ -60,7 +60,7 @@ class TestAirtableIntegration:
         assert len(spec.prompts) >= 1
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count >= 1
         assert result.failed_count == 0
 
@@ -85,7 +85,7 @@ class TestAirtableIntegration:
         assert len(spec.prompts) >= 1
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count >= 1
 
     def test_write_results_to_airtable(self):
@@ -103,14 +103,14 @@ class TestAirtableIntegration:
         )
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         created = write_workflow_results(base_id, "_results", result, spec=spec)
         assert len(created) == result.success_count
 
         record = created[0]
-        assert "run_id" in record
-        assert "run_date" in record
+        assert "run_id" in record["fields"]
+        assert "run_date" in record["fields"]
 
     def test_write_results_with_named_adapter(self):
         from ffai_workflow_adapters.config import reload_config
@@ -127,7 +127,7 @@ class TestAirtableIntegration:
         )
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         created = write_workflow_results(base_id, "_results_custom", result, adapter="custom", spec=spec)
         assert len(created) == result.success_count
