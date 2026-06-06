@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ffai-workflow-adapters"
-version = "0.2.0"
+version = "0.2.1"
 description = "External workflow adapters for FFAI — load workflows from Airtable, Google Sheets, and other tabular sources"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ classifiers = [
 keywords = ["ffai", "workflow", "airtable", "llm", "automation"]
 
 dependencies = [
-    "ffai>=0.1.4",
+    "ffai>=0.1.6",
     "pydantic-settings>=2.13.0",
     "pyyaml>=6.0",
 ]
@@ -54,6 +54,7 @@ dev = [
     "pytest",
     "pyright",
     "ruff",
+    "papermill>=2.6.0",
     "ffai-workflow-adapters[docs]",
     "odfpy>=1.4.0",
 ]

@@ -269,7 +269,7 @@ print("Executing CSV workflow...")
 
 
 code("""\
-result = run_sync(ffai.execute_workflow(spec))
+result = run_sync(ffai.workflow.execute_workflow(spec))
 
 print(f"Completed: {result.success_count} succeeded, {result.failed_count} failed, {result.skipped_count} skipped, {result.aborted_count} aborted")
 print(f"Aborted: {result.aborted}")

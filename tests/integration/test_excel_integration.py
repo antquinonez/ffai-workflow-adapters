@@ -69,7 +69,7 @@ class TestExcelIntegration:
         assert spec.prompts[1].history == ["topic"]
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         assert result.success_count == 2
         assert result.failed_count == 0
@@ -117,10 +117,10 @@ class TestExcelIntegration:
         spec = load_workflow_excel(str(workbook), name="append_test")
         ffai = _create_client()
 
-        result1 = asyncio.run(ffai.execute_workflow(spec))
+        result1 = asyncio.run(ffai.workflow.execute_workflow(spec))
         write_workflow_results_excel(result1, path=str(results), spec=spec)
 
-        result2 = asyncio.run(ffai.execute_workflow(spec))
+        result2 = asyncio.run(ffai.workflow.execute_workflow(spec))
         write_workflow_results_excel(result2, path=str(results), spec=spec)
 
         from openpyxl import load_workbook
@@ -159,7 +159,7 @@ class TestExcelIntegration:
         assert meta["topic"]["Comments"] == "Invention step"
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count == 1
 
         results_path = tmp_path / "custom_results.xlsx"
@@ -193,7 +193,7 @@ class TestExcelIntegration:
 
         spec = load_workflow_excel(str(workbook), name="custom_run_id")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         write_workflow_results_excel(result, path=str(results), spec=spec, run_id="batch-99")
 
@@ -215,7 +215,7 @@ class TestExcelIntegration:
 
         spec = load_workflow_excel(str(workbook), name="config_path_test")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         config_results = tmp_path / "auto_results.xlsx"
         from ffai_workflow_adapters.config import get_config

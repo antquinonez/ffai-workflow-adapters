@@ -76,7 +76,7 @@ class TestCsvIntegration:
         assert spec.prompts[1].history == ["topic"]
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         assert result.success_count == 2
         assert result.failed_count == 0
@@ -111,10 +111,10 @@ class TestCsvIntegration:
         spec = load_workflow_csv(workflow, name="csv_append")
         ffai = _create_client()
 
-        result1 = asyncio.run(ffai.execute_workflow(spec))
+        result1 = asyncio.run(ffai.workflow.execute_workflow(spec))
         write_workflow_results_csv(result1, path=results, spec=spec)
 
-        result2 = asyncio.run(ffai.execute_workflow(spec))
+        result2 = asyncio.run(ffai.workflow.execute_workflow(spec))
         write_workflow_results_csv(result2, path=results, spec=spec)
 
         with results.open(encoding="utf-8") as f:
@@ -136,7 +136,7 @@ class TestCsvIntegration:
 
         spec = load_workflow_csv(workflow, name="csv_run_id")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         write_workflow_results_csv(result, path=results, spec=spec, run_id="batch-42")
 
@@ -159,7 +159,7 @@ class TestCsvIntegration:
         assert spec.prompts[0].prompt == 'Name a discovery. Include details: "who", "when", "where".'
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count == 1
 
         write_workflow_results_csv(result, path=results, spec=spec)
@@ -183,7 +183,7 @@ class TestCsvIntegration:
 
         spec = load_workflow_csv(workflow, name="csv_passthrough")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         write_workflow_results_csv(result, path=results, spec=spec)
 
@@ -217,7 +217,7 @@ class TestTsvIntegration:
         assert len(spec.prompts) == 2
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
 
         assert result.success_count == 2
         assert result.results["topic"].response
@@ -252,7 +252,7 @@ class TestTsvIntegration:
         assert spec.prompts[0].prompt == prompt
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count == 1
 
         write_workflow_results_tsv(result, path=results, spec=spec)

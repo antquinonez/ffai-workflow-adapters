@@ -123,7 +123,7 @@ class TestGoogleSheetsIntegration:
         assert spec.prompts[0].name == "topic"
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count == 1
         assert result.results["topic"].response
 
@@ -143,7 +143,7 @@ class TestGoogleSheetsIntegration:
 
         spec = load_workflow_google_sheets(ss_id, worksheet="TestWorkflowRW", name="gsheets_rw")
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count == 1
 
         output_ws = "TestResults"
@@ -185,7 +185,7 @@ class TestGoogleSheetsIntegration:
         assert spec.prompts[1].history == ["topic"]
 
         ffai = _create_client()
-        result = asyncio.run(ffai.execute_workflow(spec))
+        result = asyncio.run(ffai.workflow.execute_workflow(spec))
         assert result.success_count == 2
 
         output_ws = "TestMultiResults"
