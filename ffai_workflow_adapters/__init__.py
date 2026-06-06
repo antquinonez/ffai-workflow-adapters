@@ -12,6 +12,7 @@ from .google_sheets import (
     write_workflow_results_google_sheets,
 )
 from .ods import load_workflow_ods, write_workflow_results_ods
+from . import rag
 
 from ._generate import litellm_generate_fn
 from ._airtable_attachments import AttachmentSync, sha256_of_text
@@ -36,4 +37,5 @@ __all__ = [
     "AttachmentSync",
     "sha256_of_text",
     "DocumentSync",
+    "rag",
 ]

@@ -41,6 +41,10 @@ excel = [
 ods = [
     "odfpy>=1.4.0",
 ]
+haystack = [
+    "haystack-ai>=2.0.0",
+    "sentence-transformers>=2.0.0",
+]
 docs = [
     "sphinx>=7.0",
     "myst-parser>=3.0",
@@ -59,6 +63,7 @@ all = [
     "ffai-workflow-adapters[excel]",
     "ffai-workflow-adapters[google_sheets]",
     "ffai-workflow-adapters[ods]",
+    "ffai-workflow-adapters[haystack]",
 ]
 
 [tool.pytest.ini_options]
