@@ -21,6 +21,7 @@ pip install ffai-workflow-adapters[airtable]
 pip install ffai-workflow-adapters[excel]
 pip install ffai-workflow-adapters[google_sheets]
 pip install ffai-workflow-adapters[ods]
+pip install ffai-workflow-adapters[haystack]
 pip install ffai-workflow-adapters[all]
 ```
 
@@ -58,7 +59,7 @@ async def main():
 
     spec = load_workflow_excel("workflow.xlsx", name="my_workflow")
 
-    result = await ffai.execute_workflow(spec)
+    result = await ffai.workflow.execute_workflow(spec)
 
     write_workflow_results_excel(result, path="results.xlsx")
 
@@ -89,6 +90,7 @@ asyncio.run(main())
 | Excel | File | `pip install ffai-workflow-adapters[excel]` | [Excel adapter guide](docs/excel.md) |
 | Google Sheets | Cloud | `pip install ffai-workflow-adapters[google_sheets]` | [Google Sheets adapter guide](docs/google-sheets.md) |
 | ODS | File | `pip install ffai-workflow-adapters[ods]` | [ODS adapter guide](docs/ods.md) |
+| HaystackRAG | In-memory | `pip install ffai-workflow-adapters[haystack]` | — |
 
 ## Configuration
 
@@ -242,6 +244,27 @@ Load a workflow spec from an OpenDocument `.ods` file.
 #### `write_workflow_results_ods(result, path=None, *, sheet=None, adapter=None, spec=None, run_id=None)`
 
 Write results to an ODS file. Always creates a new file.
+
+### HaystackRAG
+
+#### `HaystackRAG(embed, store, collection_name, *, store_dir=None, ...)`
+
+Haystack-backed RAG with the same `aindex` / `asearch` / `aquery` / `count` interface as `ffai.rag.RAG`. Supports hybrid retrieval, re-ranking, and multiple vector-store backends.
+
+```python
+from ffai_workflow_adapters.rag import HaystackRAG
+
+rag = HaystackRAG(
+    embed="sentence-transformers/all-MiniLM-L6-v2",
+    store="chroma",
+    collection_name="my_rag",
+    store_dir="./chroma_db",
+)
+
+await rag.aindex(text, source="doc.txt")
+hits = await rag.asearch("What is X?", top_k=5)
+result = await rag.aquery("What is X?", generate_fn=my_fn, top_k=5)
+```
 
 ### Configuration
 
